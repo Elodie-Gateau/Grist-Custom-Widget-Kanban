@@ -8,6 +8,7 @@ const wrapper = document.getElementById("wrapper");
 let allColsMeta = [];
 let lastRecords = [];
 let choices = [];
+let currentTableId = null;
 
 // Utils
 function strNoAccent(str) {
@@ -22,6 +23,14 @@ function safeParse(json) {
   } catch {
     return null;
   }
+}
+
+// Initialisation de l'ID de la table actuelle
+async function initCurrentTableId() {
+  if (currentTableId) return currentTableId;
+  const table = await grist.getTable();
+  currentTableId = await table._platform.getTableId();
+  return currentTableId;
 }
 
 // Fonction pour récupérer toutes les colonnes de la table actuelle
@@ -120,6 +129,18 @@ function getChoicesFromMeta(colMeta) {
   }
 })();
 
+// Marque une carte comme "draggable" et envoie les infos utiles lors du drag
+function makeCardDraggable(cardEl, rowId, fromHeaderValue, sourceColId) {
+  cardEl.draggable = true; // indispensable pour activer le drag natif
+  cardEl.addEventListener("dragstart", (e) => {
+    // On stocke dans le dataTransfer les infos utiles pour l'update au drop
+    e.dataTransfer.setData("rowId", String(rowId));
+    e.dataTransfer.setData("fromHeader", fromHeaderValue); // valeur d'origine (ex: "À faire")
+    e.dataTransfer.setData("sourceColId", sourceColId); // nom du champ (ex: "Statut")
+    e.dataTransfer.effectAllowed = "move";
+  });
+}
+
 // Fonction pour rendre les en-têtes basés sur les valeurs uniques de la colonne sélectionnée
 function renderHeader(source, records) {
   const order = getChoicesFromMeta(source);
@@ -198,18 +219,88 @@ function createKanban(leadHeader, wrapper, records, source) {
           grist.setCursorPos({ rowId: record.id }); // Position l'éditeur de Grist sur le bon record
         }
       });
+
+      makeCardDraggable(card, record.id, item.value, source);
     }
   }
 }
 
 function catchColumn(choices, selectedSource) {
-  // selectedSource = colId (ex: "Statut")
   for (const col of choices) {
     if ((col.colId || col.id) === selectedSource) {
       return col; // on renvoie l'objet méta complet (accès à widgetOptions)
     }
   }
   return null;
+}
+
+// Met à jour la cellule (Choice ou ChoiceList) après un drop
+async function updateCardAfterDrop(
+  rowId,
+  sourceColId,
+  fromHeaderValue,
+  toHeaderValue,
+  currentCellValue
+) {
+  await initCurrentTableId();
+  // Normalise pour comparer sans accents
+  const eq = (a, b) => strNoAccent(a) === strNoAccent(b);
+
+  let newValue;
+
+  if (Array.isArray(currentCellValue)) {
+    // CHOICELIST : on retire l'ancienne valeur (si présente) et on ajoute la nouvelle
+    const withoutOld = currentCellValue.filter((v) => !eq(v, fromHeaderValue));
+    // Évite doublon
+    if (!withoutOld.some((v) => eq(v, toHeaderValue))) {
+      withoutOld.push(toHeaderValue);
+    }
+    newValue = withoutOld;
+  } else {
+    // CHOICE (scalaire) : on remplace simplement par la nouvelle valeur
+    newValue = toHeaderValue;
+  }
+
+  // Update côté Grist
+  const action = [
+    "UpdateRecord",
+    currentTableId,
+    rowId,
+    { [sourceColId]: newValue },
+  ];
+  await grist.docApi.applyUserActions([action]);
+}
+
+// Active le drop sur une colonne Kanban donnée
+function enableColumnDrop(columnEl, headerValue, sourceColId) {
+  // Autorise le dépôt
+  columnEl.addEventListener("dragover", (e) => {
+    e.preventDefault();
+  });
+
+  // Récupère les infos envoyées par la carte au dragstart et update
+  columnEl.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const rowId = Number(e.dataTransfer.getData("rowId"));
+    const fromHeader = e.dataTransfer.getData("fromHeader"); // d'où venait la carte
+    const sourceCol = e.dataTransfer.getData("sourceColId"); // sécurité (doit = sourceColId)
+
+    if (!rowId || !sourceCol) return;
+
+    // On a besoin de la valeur actuelle pour savoir si c'est ChoiceList
+    const record = lastRecords.find((r) => r.id === rowId);
+    if (!record) return;
+    const currentCellValue = record[sourceColId];
+
+    // headerValue = valeur de la colonne où on droppe
+    await updateCardAfterDrop(
+      rowId,
+      sourceColId,
+      fromHeader,
+      headerValue,
+      currentCellValue
+    );
+  });
 }
 
 // Écouteur d'événements pour le changement de sélection dans le menu déroulant
