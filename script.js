@@ -1,4 +1,4 @@
-grist.ready({ requiredAccess: "full" });
+grist.ready({ requiredAccess: "full", allowSelectBy: true });
 
 // Déclaration des variables
 const select = document.getElementById("sortBy");
@@ -37,7 +37,7 @@ async function getAllColumns() {
     for (const col of cols) {
       if (col.type === "Choice") {
         const option = document.createElement("option");
-        option.value = col.label;
+        option.value = strNoAccent(col.label);
         option.textContent = col.label;
         select.appendChild(option);
       }
@@ -51,11 +51,14 @@ async function getAllColumns() {
 function renderHeader(source, records) {
   wrapper.innerHTML = "";
   const leadValues = [];
-
   for (const row of records) {
     const value = row[source];
-
-    if (value !== undefined && value !== "" && !leadValues.includes(value)) {
+    const valueNoAccent = strNoAccent(value);
+    if (
+      value !== undefined &&
+      value !== "" &&
+      !leadValues.some((v) => strNoAccent(v) === valueNoAccent)
+    ) {
       leadValues.push(value);
     }
   }
@@ -82,7 +85,7 @@ function createKanban(leadHeader, wrapper, records, source) {
     column.prepend(head);
 
     for (const record of records) {
-      if (record[source] === item) {
+      if (strNoAccent(record[source]) === strNoAccent(item)) {
         const card = document.createElement("div");
         card.classList.add(
           "card",
@@ -90,13 +93,14 @@ function createKanban(leadHeader, wrapper, records, source) {
           "rounded",
           "overflow-hidden",
           "shadow-lg",
-          "p-2"
+          "p-2",
+          "h-auto"
         );
         for (const infos in record) {
           if (infos !== "id" && infos !== source) {
             const item = document.createElement("div");
             card.appendChild(item);
-            item.classList.add("flex", "gap-2", "items-center", "py-2");
+            item.classList.add("flex", "gap-2", "items-center");
             const titleItem = document.createElement("h3");
             titleItem.textContent = infos;
             const contentItem = document.createElement("p");
@@ -106,6 +110,14 @@ function createKanban(leadHeader, wrapper, records, source) {
           }
         }
         column.appendChild(card);
+        // Pour chaque record, lors de la création de la card :
+        card.dataset.rowId = record.id; // Ajoute l'id du record comme data attribute
+
+        card.addEventListener("click", () => {
+          if (record.id !== undefined) {
+            grist.setCursorPos({ rowId: record.id }); // Position l'éditeur de Grist sur le bon record
+          }
+        });
       }
     }
   }
@@ -113,6 +125,7 @@ function createKanban(leadHeader, wrapper, records, source) {
 
 // Fonction pour supprimer les accents d'une chaîne de caractères
 function strNoAccent(str) {
+  if (!str) return "";
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
@@ -129,4 +142,6 @@ grist.onRecords((records) => {
   });
 });
 
-grist.onRecord((record) => {});
+grist.onRecord((record) => {
+  console.log(record);
+});
