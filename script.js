@@ -167,6 +167,7 @@ function createKanban(leadHeader, wrapper, records, source) {
     head.classList.add("title", "bg-primary");
     column.prepend(head);
 
+    enableColumnDrop(column, item.value, source);
     for (const record of records) {
       const cellValue = record[source];
       const headerValue = item.value;
@@ -276,6 +277,8 @@ function enableColumnDrop(columnEl, headerValue, sourceColId) {
   // Autorise le dépôt
   columnEl.addEventListener("dragover", (e) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    columnEl.classList.add("ring-2");
   });
 
   // Récupère les infos envoyées par la carte au dragstart et update
