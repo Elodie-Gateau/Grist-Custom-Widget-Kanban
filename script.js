@@ -3,6 +3,7 @@ grist.ready({ requiredAccess: "full" });
 // Déclaration des variables
 const select = document.getElementById("sortBy");
 const wrapper = document.getElementById("wrapper");
+wrapper.classList.add("h-full", "flex", "divide-x-2", "divide-slate-200");
 
 // Fonction pour récupérer toutes les colonnes de la table actuelle
 async function getAllColumns() {
@@ -63,27 +64,47 @@ function renderHeader(source, records) {
 
 // Fonction pour créer les éléments d'en-tête dans le DOM
 function createKanban(leadHeader, wrapper, records, source) {
-  console.log(leadHeader);
-  console.log(source);
-  console.log(records);
   for (const item of leadHeader) {
     const column = document.createElement("div");
-    column.classList.add("column");
+    column.classList.add(
+      "column",
+      "p-2",
+      "w-full",
+      "h-full",
+      "flex",
+      "flex-col"
+    );
     wrapper.appendChild(column);
 
     const head = document.createElement("h2");
     head.textContent = item;
-    head.classList.add("title");
+    head.classList.add("title", "bg-primary");
     column.prepend(head);
 
     for (const record of records) {
       if (record[source] === item) {
-        for (const infos in record) {
-          console.log(infos, record[infos]);
-        }
         const card = document.createElement("div");
-        card.classList.add("card");
-        card.textContent = record.Nom || "";
+        card.classList.add(
+          "card",
+          "max-w-sm",
+          "rounded",
+          "overflow-hidden",
+          "shadow-lg",
+          "p-2"
+        );
+        for (const infos in record) {
+          if (infos !== "id" && infos !== source) {
+            const item = document.createElement("div");
+            card.appendChild(item);
+            item.classList.add("flex", "gap-2", "items-center", "py-2");
+            const titleItem = document.createElement("h3");
+            titleItem.textContent = infos;
+            const contentItem = document.createElement("p");
+            contentItem.textContent = record[infos];
+            item.appendChild(titleItem);
+            item.appendChild(contentItem);
+          }
+        }
         column.appendChild(card);
       }
     }
@@ -94,16 +115,6 @@ function createKanban(leadHeader, wrapper, records, source) {
 function strNoAccent(str) {
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
-
-// function showCard(source, records, leadHeader) {
-//   console.log(leadHeader);
-//   console.log(source);
-//   console.log(records);
-//   for (const leadItem of leadHeader) {
-//     const card = document.createElement("div");
-//     card.classList.add("card");
-//   }
-// }
 
 // Écouteur d'événements pour le changement de sélection dans le menu déroulant
 grist.onRecords((records) => {
