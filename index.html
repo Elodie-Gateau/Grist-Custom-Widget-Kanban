@@ -38,6 +38,7 @@
       let choices = [];
       let currentTableId = null;
       let widgetOptions = {};
+      let choicesInitialized = false;
 
       // Utils
       function strNoAccent(str) {
@@ -75,6 +76,27 @@
       function getHiddenFor(colId) {
         const v = widgetOptions?.[hiddenKey(colId)];
         return Array.isArray(v) ? v : []; // on retourne toujours un tableau
+      }
+      async function initChoicesOnce() {
+        if (choicesInitialized) return;
+        // on est sûrs d'être *après* la liaison (onRecords vient d'arriver)
+        const cols = await getAllColumns();
+        allColsMeta = cols;
+
+        // vide d'abord le select (au cas où)
+        while (select.options.length > 1) select.remove(1);
+        choices = [];
+
+        for (const col of cols) {
+          if (isChoiceLike(col)) {
+            const opt = document.createElement("option");
+            opt.value = col.colId || col.id || "";
+            opt.textContent = col.label || col.colId || "(?)";
+            select.appendChild(opt);
+            choices.push(col);
+          }
+        }
+        choicesInitialized = true;
       }
 
       async function setHiddenFor(colId, arr) {
@@ -129,9 +151,9 @@
         return allHeaders.filter((h) => !hidden.has(norm(h.value)));
       }
       /* ---------------------------------------------
-   Helpers pour reconnaître Choice/ChoiceList
-   et extraire l'ordre des 'choices' depuis widgetOptions
-   --------------------------------------------- */
+         Helpers pour reconnaître Choice/ChoiceList
+         et extraire l'ordre des 'choices' depuis widgetOptions
+         --------------------------------------------- */
       function isChoiceLike(colMeta) {
         const wo = safeParse(colMeta?.widgetOptions);
         // Certaines versions stockent le widget +/ou les choices
@@ -461,9 +483,10 @@
       });
 
       // Écouteurs d'événements Grist
-      grist.onRecords((records) => {
+      grist.onRecords(async (records) => {
         lastRecords = records || [];
 
+        await initChoicesOnce();
         const selectedSource = select.value; // STRING: colId
         const selectedColumn = catchColumn(choices, selectedSource); // OBJET: méta
         if (!selectedColumn) return;
