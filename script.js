@@ -3,6 +3,8 @@ grist.ready({ requiredAccess: "full", allowSelectBy: true });
 // Déclaration des variables
 const select = document.getElementById("sortBy");
 const wrapper = document.getElementById("wrapper");
+const visBtn = document.getElementById("visBtn");
+const visPanel = document.getElementById("visPanel");
 const empty = "(vide)";
 
 // État global
@@ -10,6 +12,7 @@ let allColsMeta = [];
 let lastRecords = [];
 let choices = [];
 let currentTableId = null;
+let widgetOptions = {};
 
 // Utils
 function strNoAccent(str) {
@@ -18,6 +21,15 @@ function strNoAccent(str) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 }
+
+function norm(s) {
+  return (s ?? "")
+    .toString()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 function safeParse(json) {
   try {
     return json ? JSON.parse(json) : null;
@@ -31,6 +43,21 @@ function isEmptyValue(v) {
   return v === null || v === undefined || v === "";
 }
 
+function hiddenKey(colId) {
+  return `kanban:hidden:${colId}`;
+}
+
+function getHiddenFor(colId) {
+  const v = widgetOptions?.[hiddenKey(colId)];
+  return Array.isArray(v) ? v : []; // on retourne toujours un tableau
+}
+
+async function setHiddenFor(colId, arr) {
+  widgetOptions[hiddenKey(colId)] = arr; // met à jour le cache local
+  await grist.widgetApi.setOption(hiddenKey(colId), arr); // persiste dans le doc
+  // après setOption, onOptions sera rappelé automatiquement avec les valeurs à jour
+}
+
 // Initialisation de l'ID de la table actuelle
 async function initCurrentTableId() {
   if (currentTableId) return currentTableId;
@@ -38,6 +65,11 @@ async function initCurrentTableId() {
   currentTableId = await table._platform.getTableId();
   return currentTableId;
 }
+
+// Récupère les options persistées
+grist.onOptions((opts) => {
+  widgetOptions = opts || {};
+});
 
 // Fonction pour récupérer toutes les colonnes de la table actuelle
 async function getAllColumns() {
@@ -64,6 +96,13 @@ async function getAllColumns() {
   return tableColumns;
 }
 
+// Fonction pour reconstruire la liste des en-têtes visibles en fonction des colonnes masquées
+
+function buildVisibleHeaders(colMeta, allHeaders) {
+  const colId = colMeta.colId || colMeta.id;
+  const hidden = new Set(getHiddenFor(colId).map(norm));
+  return allHeaders.filter((h) => !hidden.has(norm(h.value)));
+}
 /* ---------------------------------------------
    Helpers pour reconnaître Choice/ChoiceList
    et extraire l'ordre des 'choices' depuis widgetOptions
@@ -156,6 +195,44 @@ function renderHeader(source, records) {
   return headers;
 }
 
+// Fonction pour afficher le panneau de gestion de la visibilité des colonnes
+function renderVisibilityUI(colMeta) {
+  const colId = colMeta.colId || colMeta.id;
+  const all = [empty, ...getChoicesFromMeta(colMeta)]; // toutes les colonnes possibles
+  const hidden = new Set(getHiddenFor(colId).map(norm));
+
+  visPanel.innerHTML = "<div class='font-medium mb-2'>Colonnes :</div>";
+  const list = document.createElement("div");
+  list.className = "grid grid-cols-2 gap-1";
+  visPanel.appendChild(list);
+
+  for (const label of all) {
+    const row = document.createElement("label");
+    row.className = "flex items-center gap-2";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !hidden.has(norm(label)); // coché = visible
+    cb.addEventListener("change", async () => {
+      const cur = new Set(getHiddenFor(colId).map(norm));
+      const key = norm(label);
+      if (cb.checked) cur.delete(key);
+      else cur.add(key);
+      await setHiddenFor(colId, Array.from(cur));
+      rerenderKanban(colMeta, lastRecords, colId); // réaffiche/récache immédiatement
+      renderVisibilityUI(colMeta); // refresh le panneau
+    });
+    const span = document.createElement("span");
+    span.textContent = label;
+    row.appendChild(cb);
+    row.appendChild(span);
+    list.appendChild(row);
+  }
+}
+
+visBtn.addEventListener("click", () => {
+  visPanel.classList.toggle("hidden");
+});
+
 // Fonction pour créer les éléments d'en-tête dans le DOM
 function createKanban(leadHeader, wrapper, records, source) {
   wrapper.innerHTML = "";
@@ -177,6 +254,16 @@ function createKanban(leadHeader, wrapper, records, source) {
     head.textContent = item.value;
     head.classList.add("title", "bg-primary");
     column.prepend(head);
+
+    const colId = source;
+    const label = item.value;
+
+    const hiddenSet = new Set(getHiddenFor(colId).map(norm));
+    const labelKey = norm(label);
+
+    if (hiddenSet.has(labelKey)) {
+      column.style.display = "none";
+    }
 
     enableColumnDrop(column, item.value, source);
 
@@ -205,7 +292,7 @@ function createKanban(leadHeader, wrapper, records, source) {
         "card",
         "max-w-sm",
         "rounded-lg",
-        "overflow-hidden",
+        // "overflow-hidden",
         "shadow-lg",
         "p-2",
         "h-auto",
@@ -236,6 +323,16 @@ function createKanban(leadHeader, wrapper, records, source) {
       makeCardDraggable(card, record.id, item.value, source);
     }
   }
+}
+function rerenderKanban(selectedColumn, records, colId) {
+  // 1) Construire TOUS les headers
+  const allHeaders = renderHeader(selectedColumn, records); // ex. renvoie [{index, value}, …]
+
+  // 2) Filtrer selon l’option "hidden" persistée
+  const visibleHeaders = buildVisibleHeaders(selectedColumn, allHeaders);
+
+  // 3) Dessiner uniquement les colonnes visibles
+  createKanban(visibleHeaders, wrapper, records, colId);
 }
 
 function catchColumn(choices, selectedSource) {
@@ -327,12 +424,13 @@ function enableColumnDrop(columnEl, headerValue, sourceColId) {
 
 // Écouteur d'événements pour le changement de sélection dans le menu déroulant
 select.addEventListener("change", () => {
-  const selectedSource = select.value; // STRING: colId
-  const selectedColumn = catchColumn(choices, selectedSource); // OBJET: méta (avec widgetOptions)
+  const selectedSource = select.value;
+  const selectedColumn = catchColumn(choices, selectedSource);
   if (!selectedColumn) return;
-
-  const leadHeader = renderHeader(selectedColumn, lastRecords); // header depuis widgetOptions
-  createKanban(leadHeader, wrapper, lastRecords, selectedSource);
+  renderVisibilityUI(selectedColumn);
+  rerenderKanban(selectedColumn, lastRecords, selectedSource);
+  // const leadHeader = renderHeader(selectedColumn, lastRecords);
+  // createKanban(leadHeader, wrapper, lastRecords, selectedSource);
 });
 
 // Écouteurs d'événements Grist
@@ -342,9 +440,10 @@ grist.onRecords((records) => {
   const selectedSource = select.value; // STRING: colId
   const selectedColumn = catchColumn(choices, selectedSource); // OBJET: méta
   if (!selectedColumn) return;
-
-  const leadHeader = renderHeader(selectedColumn, lastRecords); // header depuis widgetOptions
-  createKanban(leadHeader, wrapper, lastRecords, selectedSource);
+  renderVisibilityUI(selectedColumn);
+  rerenderKanban(selectedColumn, lastRecords, selectedSource);
+  // const leadHeader = renderHeader(selectedColumn, lastRecords);
+  // createKanban(leadHeader, wrapper, lastRecords, selectedSource);
 });
 
 grist.onRecord((record) => {});
