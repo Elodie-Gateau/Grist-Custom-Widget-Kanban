@@ -154,11 +154,13 @@ function createKanban(leadHeader, wrapper, records, source) {
     const column = document.createElement("div");
     column.classList.add(
       "column",
-      "p-2",
+      "p-3",
       "w-full",
       "h-full",
       "flex",
-      "flex-col"
+      "flex-col",
+      "gap-4",
+      "items-center"
     );
     wrapper.appendChild(column);
 
@@ -193,18 +195,19 @@ function createKanban(leadHeader, wrapper, records, source) {
       card.classList.add(
         "card",
         "max-w-sm",
-        "rounded",
+        "rounded-lg",
         "overflow-hidden",
         "shadow-lg",
         "p-2",
-        "h-auto"
+        "h-auto",
+        "pointer"
       );
       for (const infos in record) {
         if (infos !== "id" && infos !== source) {
           const row = document.createElement("div");
           row.classList.add("flex", "gap-2", "items-center");
           const titleItem = document.createElement("h3");
-          titleItem.textContent = `${infos} :`;
+          titleItem.innerHTML = `${infos}&nbsp;:`;
           const contentItem = document.createElement("p");
           contentItem.textContent = record[infos];
           row.appendChild(titleItem);
