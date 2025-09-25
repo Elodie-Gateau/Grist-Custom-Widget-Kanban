@@ -3,6 +3,7 @@ grist.ready({ requiredAccess: "full", allowSelectBy: true });
 // Déclaration des variables
 const select = document.getElementById("sortBy");
 const wrapper = document.getElementById("wrapper");
+const empty = "(vide)";
 
 // État global
 let allColsMeta = [];
@@ -23,6 +24,11 @@ function safeParse(json) {
   } catch {
     return null;
   }
+}
+
+function isEmptyValue(v) {
+  if (Array.isArray(v)) return v.length === 0;
+  return v === null || v === undefined || v === "";
 }
 
 // Initialisation de l'ID de la table actuelle
@@ -145,11 +151,14 @@ function makeCardDraggable(cardEl, rowId, fromHeaderValue, sourceColId) {
 function renderHeader(source, records) {
   const order = getChoicesFromMeta(source);
   wrapper.innerHTML = "";
-  return order.map((value, index) => ({ index, value }));
+  const headers = order.map((value, index) => ({ index, value }));
+  headers.unshift({ index: 0, value: empty });
+  return headers;
 }
 
 // Fonction pour créer les éléments d'en-tête dans le DOM
 function createKanban(leadHeader, wrapper, records, source) {
+  wrapper.innerHTML = "";
   for (const item of leadHeader) {
     const column = document.createElement("div");
     column.classList.add(
@@ -170,22 +179,22 @@ function createKanban(leadHeader, wrapper, records, source) {
     column.prepend(head);
 
     enableColumnDrop(column, item.value, source);
+
     for (const record of records) {
       const cellValue = record[source];
       const headerValue = item.value;
 
       let isMatch = false;
 
-      if (Array.isArray(cellValue)) {
+      if (headerValue === empty) {
+        isMatch = isEmptyValue(cellValue);
+      } else if (Array.isArray(cellValue)) {
         // ChoiceList : on vérifie si au moins une valeur de la liste correspond
-        for (const v of cellValue) {
-          if (strNoAccent(v) === strNoAccent(headerValue)) {
-            isMatch = true;
-            break;
-          }
-        }
+        isMatch = cellValue.some(
+          (v) => strNoAccent(v) === strNoAccent(headerValue)
+        );
       } else {
-        // Choice (scalaire) : comparaison directe
+        // Choice (scalaire)
         isMatch = strNoAccent(cellValue) === strNoAccent(headerValue);
       }
 
@@ -251,8 +260,9 @@ async function updateCardAfterDrop(
   const eq = (a, b) => strNoAccent(a) === strNoAccent(b);
 
   let newValue;
-
-  if (Array.isArray(currentCellValue)) {
+  if (toHeaderValue === empty) {
+    newValue = Array.isArray(currentCellValue) ? [] : null;
+  } else if (Array.isArray(currentCellValue)) {
     // CHOICELIST : on retire l'ancienne valeur (si présente) et on ajoute la nouvelle
     const withoutOld = currentCellValue.filter((v) => !eq(v, fromHeaderValue));
     // Évite doublon
@@ -284,14 +294,20 @@ function enableColumnDrop(columnEl, headerValue, sourceColId) {
     columnEl.classList.add("ring-2");
   });
 
+  columnEl.addEventListener("dragleave", () => {
+    columnEl.classList.remove("ring-2");
+  });
+
   // Récupère les infos envoyées par la carte au dragstart et update
   columnEl.addEventListener("drop", async (e) => {
     e.preventDefault();
+    columnEl.classList.remove("ring-2");
     const rowId = Number(e.dataTransfer.getData("rowId"));
     const fromHeader = e.dataTransfer.getData("fromHeader"); // d'où venait la carte
     const sourceCol = e.dataTransfer.getData("sourceColId"); // sécurité (doit = sourceColId)
 
     if (!rowId || !sourceCol) return;
+    if (sourceCol !== sourceColId) return;
 
     // On a besoin de la valeur actuelle pour savoir si c'est ChoiceList
     const record = lastRecords.find((r) => r.id === rowId);
