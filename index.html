@@ -7,32 +7,47 @@
   <body>
     <div style="font-family: sans-serif; padding: 1em">
       <h1 class="text-lg font-bold text-emerald-500 mb-4">Kanban</h1>
+
       <div
         class="flex justify-start items-center gap-6 p-4 mb-3 bg-slate-50 dark:bg-slate-500"
       >
-        <select name="sortby" id="sortBy" class="rounded-lg p-3 text-sm">
+        <select
+          name="sortby"
+          id="sortBy"
+          class="rounded-lg p-3 text-sm shadow-md"
+        >
           <option class="text-sm" value="none" selected>
             Choisissez une source
           </option>
         </select>
+
         <button
           id="visBtn"
-          class="text-sm px-3 py-1 border-none bg-slate-50 rounded mb-2 dark:bg-slate-500"
+          class="text-sm px-3 py-1 border-none bg-white rounded-lg mb-2 dark:bg-slate-500 shadow-md"
         >
           Affichage colonnes
         </button>
-        <div id="visPanel" class="p-2 border rounded mb-3 hidden"></div>
+
         <button
           id="fieldsBtn"
-          class="text-sm px-3 py-1 border-none bg-slate-50 rounded mb-2 dark:bg-slate-500"
+          class="text-sm px-3 py-1 border-none bg-slate-50 rounded mb-2 dark:bg-slate-500 shadow-md"
         >
           Affichage champs
         </button>
-        <div id="fieldsPanel" class="p-2 border rounded mb-3 hidden"></div>
+        <div class="flex w-full gap-4 items-start">
+          <div
+            id="visPanel"
+            class="p-2 w-full bg-white rounded mb-3 hidden"
+          ></div>
+          <div
+            id="fieldsPanel"
+            class="p-2 w-full bg-white rounded mb-3 hidden"
+          ></div>
+        </div>
       </div>
       <div
         id="wrapper"
-        class="text-xs mx-full max-w-7xl items-stretch justify-between flex gap-2 divide-x-2 divide-slate-200"
+        class="text-xs mx-full max-w-7xl items-stretch justify-between flex gap-2"
       ></div>
     </div>
     <script>
@@ -402,17 +417,15 @@
           const cb = document.createElement("input");
           cb.type = "checkbox";
           cb.checked = isDefaultMode
-            ? defaultVisible.includes(cid) // mode défaut : 5 premiers
+            ? defaultVisible.includes(cid)
             : !hidden.has(norm(cid));
 
           cb.addEventListener("change", async () => {
             const hiddenNow = getHiddenFields(tableId, sourceColId).map(norm);
             const isDefaultNow = hiddenNow.length === 0;
 
-            // point de départ des visibles
             let visibleSet;
             if (isDefaultNow) {
-              // ⛳️ on part de la photo "5/6 par défaut"
               visibleSet = new Set(defaultVisible);
             } else {
               const hiddenNowSet = new Set(hiddenNow);
@@ -469,9 +482,8 @@
           const column = document.createElement("div");
           column.classList.add(
             "column",
-            "p-4",
+
             "w-full",
-            "h-full",
             "flex",
             "flex-col",
             "gap-4",
@@ -489,7 +501,8 @@
             "text-center",
             "font-semibold",
             "bg-emerald-500",
-            "text-white"
+            "text-white",
+            "rounded-t-lg"
           );
           column.prepend(head);
 
@@ -528,7 +541,7 @@
             const card = document.createElement("div");
             card.classList.add(
               "card",
-              "w-full",
+              "w-80",
               "rounded-lg",
               "shadow-lg",
               "p-3",
@@ -554,9 +567,16 @@
 
             for (const infos of keys) {
               const row = document.createElement("div");
-              row.classList.add("flex", "gap-2", "items-center");
-              const titleItem = document.createElement("h3");
+              row.classList.add(
+                "flex",
+                "flex-col",
+                "gap-2",
+                "items-start",
+                "p-2"
+              );
+              const titleItem = document.createElement("p");
               titleItem.innerHTML = `${infos}&nbsp;:`;
+              titleItem.classList.add("font-semibold");
               const contentItem = document.createElement("p");
               contentItem.textContent = record[infos];
               row.appendChild(titleItem);
