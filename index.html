@@ -473,7 +473,7 @@
       fieldsBtn.addEventListener("click", () => {
         fieldsPanel.classList.toggle("hidden");
         const isHidden = fieldsPanel.classList.toggle("hidden");
-        // Si le panel est caché, on propose d'afficher ; sinon on propose de masquer
+        console.log(isHidden);
         fieldsBtn.textContent = isHidden
           ? "Afficher les champs"
           : "Masquer les champs";
