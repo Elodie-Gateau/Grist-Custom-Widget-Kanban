@@ -370,11 +370,11 @@
 
       visBtn.addEventListener("click", () => {
         visPanel.classList.toggle("hidden");
-        if (visBtn.textContent === "Afficher les colonnes") {
-          visBtn.textContent = "Masquer les colonnes";
-        } else {
-          visBtn.textContent = "Afficher les colonnes";
-        }
+        const isHidden = visPanel.classList.toggle("hidden");
+        // Si le panel est caché, on propose d'afficher ; sinon on propose de masquer
+        visBtn.textContent = isHidden
+          ? "Afficher les colonnes"
+          : "Masquer les colonnes";
       });
 
       // Panneau de gestion des champs affichés dans les cartes
@@ -472,11 +472,11 @@
 
       fieldsBtn.addEventListener("click", () => {
         fieldsPanel.classList.toggle("hidden");
-        if (fieldsBtn.textContent === "Afficher les champs") {
-          fieldsBtn.textContent = "Masquer les champs";
-        } else {
-          fieldsBtn.textContent = "Afficher les champs";
-        }
+        const isHidden = fieldsPanel.classList.toggle("hidden");
+        // Si le panel est caché, on propose d'afficher ; sinon on propose de masquer
+        fieldsBtn.textContent = isHidden
+          ? "Afficher les champs"
+          : "Masquer les champs";
       });
 
       // Fonction pour créer les éléments d'en-tête dans le DOM
@@ -671,17 +671,17 @@
         columnEl.addEventListener("dragover", (e) => {
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
-          columnEl.classList.add("ring-2 ring-emerald-500");
+          columnEl.classList.add("ring-2", "ring-emerald-500");
         });
 
         columnEl.addEventListener("dragleave", () => {
-          columnEl.classList.remove("ring-2 ring-emerald-500");
+          columnEl.classList.remove("ring-2", "ring-emerald-500");
         });
 
         // Récupère les infos envoyées par la carte au dragstart et update
         columnEl.addEventListener("drop", async (e) => {
           e.preventDefault();
-          columnEl.classList.remove("ring-2 ring-emerald-500");
+          columnEl.classList.remove("ring-2", "ring-emerald-500");
           const rowId = Number(e.dataTransfer.getData("rowId"));
           const fromHeader = e.dataTransfer.getData("fromHeader"); // d'où venait la carte
           const sourceCol = e.dataTransfer.getData("sourceColId"); // sécurité (doit = sourceColId)
