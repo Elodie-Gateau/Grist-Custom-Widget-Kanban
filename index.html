@@ -304,10 +304,6 @@
         const colId = colMeta.colId || colMeta.id;
         const all = [empty, ...getChoicesFromMeta(colMeta)]; // toutes les colonnes possibles
         const hidden = new Set(getHiddenFor(colId).map(norm));
-        const allFields = getAllColumns()
-          .map((c) => c.colId || c.id || "")
-          .filter((id) => id && id !== colId);
-        const hiddenField = new Set(getHiddenFieldFor(colId).map(norm));
 
         visPanel.innerHTML = "<div class='font-medium mb-2'>Colonnes :</div>";
         const list = document.createElement("div");
@@ -415,9 +411,10 @@
         wrapper.innerHTML = "";
 
         const tableId = currentTableId;
-        const hiddenFieldSet = new Set(
-          getHiddenFields(tableId, source).map(norm)
-        );
+
+        const hiddenFields = getHiddenFields(tableId, sourceColId);
+        const hiddenFieldSet = new Set(hiddenFields.map(norm));
+        const isDefault = hiddenFields.length === 0;
 
         for (const item of leadHeader) {
           const column = document.createElement("div");
@@ -438,11 +435,11 @@
           head.classList.add("title", "bg-primary");
           column.prepend(head);
 
-          const colId = source;
-          const label = item.value;
+          // const colId = source;
+          // const label = item.value;
 
-          const hiddenSet = new Set(getHiddenFor(colId).map(norm));
-          const labelKey = norm(label);
+          const hiddenSet = new Set(getHiddenFor(source).map(norm));
+          const labelKey = norm(item.value);
 
           if (hiddenSet.has(labelKey)) {
             column.style.display = "none";
@@ -480,11 +477,9 @@
               "h-auto",
               "pointer"
             );
-            const isDefault = hiddenFields.length === 0;
 
             let keys = Object.keys(record).filter(
-              (k) =>
-                k !== "id" && k !== sourceColId && !hiddenFieldSet.has(norm(k))
+              (k) => k !== "id" && k !== source && !hiddenFieldSet.has(norm(k))
             );
 
             if (isDefault) {
