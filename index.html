@@ -10,9 +10,20 @@
         Vue Kanban
       </h1>
 
-      <select name="sortby" id="sortBy">
-        <option value="none">Choisissez une source</option>
-      </select>
+      <el-select name="sortby" id="sortBy" class="mt-2 block">
+        <button
+          type="button"
+          class="grid w-full cursor-default grid-cols-1 rounded-md bg-white py-1.5 pr-2 pl-3 text-left text-gray-900 outline-1 -outline-offset-1 outline-gray-300 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-600 sm:text-sm/6"
+        >
+          <el-selectedcontent
+            class="col-start-1 row-start-1 flex items-center gap-3 pr-6"
+          >
+            <span class="block truncate" value="none"
+              >Choisissez une source</span
+            >
+          </el-selectedcontent>
+        </button>
+      </el-select>
       <button id="visBtn" class="px-2 py-1 border rounded mb-2">
         Choisir les colonnes
       </button>
@@ -23,7 +34,7 @@
       <div id="fieldsPanel" class="p-2 border rounded mb-3 hidden"></div>
       <div
         id="wrapper"
-        class="text-xs mx-full max-w-7xl items-start justify-between h-full flex divide-x-2 divide-slate-200"
+        class="text-xs mx-full max-w-7xl items-stretch justify-between flex divide-x-2 divide-slate-200"
       ></div>
     </div>
     <script>
@@ -266,10 +277,55 @@
 
           for (const col of cols) {
             if (isChoiceLike(col)) {
-              const option = document.createElement("option");
-              option.value = col.colId || col.id || "";
-              option.textContent = col.label || col.colId || "(?)";
-              select.appendChild(option);
+              const button = document.createElement("button");
+              button.classList.add(
+                "grid",
+                "w-full",
+                "cursor-default",
+                "grid-cols-1",
+                "rounded-md",
+                "bg-white",
+                "py-1.5",
+                "pr-2",
+                "pl-3",
+                "text-left",
+                "text-gray-900",
+                "outline-1",
+                "-outline-offset-1",
+                "outline-gray-300",
+                "focus-visible:outline-2",
+                "focus-visible:-outline-offset-2",
+                "focus-visible:outline-indigo-600",
+                "sm:text-sm/6"
+              );
+              const option = document.createElement("el-option");
+              option.classList.add(
+                "group/option",
+                "relative",
+                "block",
+                "cursor-default",
+                "py-2",
+                "pr-9",
+                "pl-3",
+                "text-gray-900",
+                "select-none",
+                "focus:bg-indigo-600",
+                "focus:text-white",
+                "focus:outline-hidden"
+              );
+              const span = document.createElement("span");
+              span.classList.add(
+                "ml-3",
+                "block",
+                "truncate",
+                "font-normal",
+                "group-aria-selected/option:font-semibold"
+              );
+              span.value = col.colId || col.id || "";
+              span.textContent = col.label || col.colId || "(?)";
+              select.appendChild(button);
+              button.appendChild(option);
+              option.appendChild(span);
               choices.push(col);
             }
           }
@@ -456,7 +512,9 @@
             "flex",
             "flex-col",
             "gap-4",
-            "items-center"
+            "items-center",
+            "bg-slate-50",
+            "rounded-lg"
           );
           wrapper.appendChild(column);
 
@@ -500,7 +558,7 @@
             const card = document.createElement("div");
             card.classList.add(
               "card",
-              "max-w-sm",
+              "w-full",
               "rounded-lg",
               "shadow-lg",
               "p-2",
