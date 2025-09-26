@@ -408,6 +408,7 @@
 
       // Fonction pour créer les éléments d'en-tête dans le DOM
       function createKanban(leadHeader, wrapper, records, source) {
+        const sourceColId = source;
         wrapper.innerHTML = "";
 
         const tableId = currentTableId;
