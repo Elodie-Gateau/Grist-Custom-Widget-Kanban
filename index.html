@@ -412,7 +412,7 @@
 
         const tableId = currentTableId;
 
-        const hiddenFields = getHiddenFields(tableId, sourceColId);
+        const hiddenFields = getHiddenFields(tableId, source);
         const hiddenFieldSet = new Set(hiddenFields.map(norm));
         const isDefault = hiddenFields.length === 0;
 
