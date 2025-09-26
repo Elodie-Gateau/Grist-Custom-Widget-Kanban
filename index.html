@@ -14,9 +14,13 @@
         <option value="none">Choisissez une source</option>
       </select>
       <button id="visBtn" class="px-2 py-1 border rounded mb-2">
-        Choix des colonnes
+        Choisir les colonnes
       </button>
       <div id="visPanel" class="p-2 border rounded mb-3 hidden"></div>
+      <button id="fieldsBtn" class="px-2 py-1 border rounded mb-2">
+        Choisir les champs
+      </button>
+      <div id="fieldsPanel" class="p-2 border rounded mb-3 hidden"></div>
       <div
         id="wrapper"
         class="text-xs mx-full max-w-7xl items-start justify-between h-full flex divide-x-2 divide-slate-200"
@@ -30,6 +34,8 @@
       const wrapper = document.getElementById("wrapper");
       const visBtn = document.getElementById("visBtn");
       const visPanel = document.getElementById("visPanel");
+      const fieldsBtn = document.getElementById("fieldsBtn");
+      const fieldsPanel = document.getElementById("fieldsPanel");
       const empty = "(vide)";
 
       // État global
@@ -77,6 +83,12 @@
         return `kanban:hidden:${colId}`;
       }
 
+      function hiddenFieldsKey(tableId, sourceColId) {
+        return `kanban:hiddenFields:${tableId}:${sourceColId}`;
+      }
+
+      // Getter et Setter pour les options persistées
+
       function getStoredSource(source) {
         const v = widgetOptions?.[sourceKey()] || "";
         return v;
@@ -86,6 +98,19 @@
         const v = widgetOptions?.[hiddenKey(colId)];
         return Array.isArray(v) ? v : []; // on retourne toujours un tableau
       }
+
+      function getHiddenFields(tableId, sourceColId) {
+        const v = widgetOptions?.[hiddenFieldsKey(tableId, sourceColId)];
+        return Array.isArray(v) ? v : [];
+      }
+      async function setHiddenFields(tableId, sourceColId, arr) {
+        widgetOptions[hiddenFieldsKey(tableId, sourceColId)] = arr;
+        await grist.widgetApi.setOption(
+          hiddenFieldsKey(tableId, sourceColId),
+          arr
+        );
+      }
+
       async function initChoicesOnce() {
         if (choicesInitialized) return;
         // on est sûrs d'être *après* la liaison (onRecords vient d'arriver)
@@ -279,6 +304,10 @@
         const colId = colMeta.colId || colMeta.id;
         const all = [empty, ...getChoicesFromMeta(colMeta)]; // toutes les colonnes possibles
         const hidden = new Set(getHiddenFor(colId).map(norm));
+        const allFields = getAllColumns()
+          .map((c) => c.colId || c.id || "")
+          .filter((id) => id && id !== colId);
+        const hiddenField = new Set(getHiddenFieldFor(colId).map(norm));
 
         visPanel.innerHTML = "<div class='font-medium mb-2'>Colonnes :</div>";
         const list = document.createElement("div");
@@ -312,9 +341,84 @@
         visPanel.classList.toggle("hidden");
       });
 
+      // Panneau de gestion des champs affichés dans les cartes
+      function renderFieldsUI(colMeta) {
+        // colMeta = meta de la SOURCE (Choice)
+        const tableCols = allColsMeta;
+        const sourceColId = colMeta.colId || colMeta.id;
+
+        // récupère l’ID de table courant que tu as déjà en global (currentTableId)
+        const tableId = currentTableId;
+        if (!tableId) return;
+
+        // liste des champs affichables dans les cards
+        const fieldMetas = tableCols.filter((c) => {
+          const cid = c.colId || c.id || "";
+          if (!cid) return false;
+          if (cid === sourceColId) return false; // on n’affiche pas la colonne Choice dans la carte
+          return true;
+        });
+
+        // set des champs masqués (normalisés)
+        const hidden = new Set(getHiddenFields(tableId, sourceColId).map(norm));
+
+        fieldsPanel.innerHTML = "<div class='font-medium mb-2'>Champs :</div>";
+        const list = document.createElement("div");
+        list.className = "grid grid-cols-2 gap-1";
+        fieldsPanel.appendChild(list);
+
+        for (const fm of fieldMetas) {
+          const cid = fm.colId || fm.id;
+          const label = fm.label || cid;
+          const row = document.createElement("label");
+          row.className = "flex items-center gap-2";
+
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = !hidden.has(norm(cid)); // coché = visible
+
+          cb.addEventListener("change", async () => {
+            const cur = new Set(
+              getHiddenFields(tableId, sourceColId).map(norm)
+            );
+            const key = norm(cid);
+            if (cb.checked) cur.delete(key);
+            else cur.add(key);
+            await setHiddenFields(tableId, sourceColId, Array.from(cur));
+
+            // re-render immédiat du Kanban
+            const colId = sourceColId;
+            const selectedColumn = catchColumn(choices, colId);
+            if (selectedColumn) {
+              rerenderKanban(selectedColumn, lastRecords, colId);
+            }
+
+            // refresh du panneau
+            renderFieldsUI(colMeta);
+          });
+
+          const span = document.createElement("span");
+          span.textContent = label;
+
+          row.appendChild(cb);
+          row.appendChild(span);
+          list.appendChild(row);
+        }
+      }
+
+      fieldsBtn.addEventListener("click", () => {
+        fieldsPanel.classList.toggle("hidden");
+      });
+
       // Fonction pour créer les éléments d'en-tête dans le DOM
       function createKanban(leadHeader, wrapper, records, source) {
         wrapper.innerHTML = "";
+
+        const tableId = currentTableId;
+        const hiddenFieldSet = new Set(
+          getHiddenFields(tableId, source).map(norm)
+        );
+
         for (const item of leadHeader) {
           const column = document.createElement("div");
           column.classList.add(
@@ -371,24 +475,24 @@
               "card",
               "max-w-sm",
               "rounded-lg",
-              // "overflow-hidden",
               "shadow-lg",
               "p-2",
               "h-auto",
               "pointer"
             );
             for (const infos in record) {
-              if (infos !== "id" && infos !== source) {
-                const row = document.createElement("div");
-                row.classList.add("flex", "gap-2", "items-center");
-                const titleItem = document.createElement("h3");
-                titleItem.innerHTML = `${infos}&nbsp;:`;
-                const contentItem = document.createElement("p");
-                contentItem.textContent = record[infos];
-                row.appendChild(titleItem);
-                row.appendChild(contentItem);
-                card.appendChild(row);
-              }
+              if (infos === "id" || infos === sourceColId) continue;
+              if (hiddenFieldSet.has(norm(infos))) continue;
+
+              const row = document.createElement("div");
+              row.classList.add("flex", "gap-2", "items-center");
+              const titleItem = document.createElement("h3");
+              titleItem.innerHTML = `${infos}&nbsp;:`;
+              const contentItem = document.createElement("p");
+              contentItem.textContent = record[infos];
+              row.appendChild(titleItem);
+              row.appendChild(contentItem);
+              card.appendChild(row);
             }
             column.appendChild(card);
             card.dataset.rowId = record.id;
@@ -511,6 +615,7 @@
         const selectedColumn = catchColumn(choices, selectedSource);
         if (!selectedColumn) return;
         renderVisibilityUI(selectedColumn);
+        renderFieldsUI(selectedColumn);
         rerenderKanban(selectedColumn, lastRecords, selectedSource);
         // const leadHeader = renderHeader(selectedColumn, lastRecords);
         // createKanban(leadHeader, wrapper, lastRecords, selectedSource);
@@ -520,7 +625,9 @@
       grist.onRecords(async (records) => {
         lastRecords = records || [];
 
+        await initCurrentTableId();
         await initChoicesOnce();
+
         if (select.value === "none") {
           const stored = getStoredSource();
           if (stored) {
@@ -530,10 +637,11 @@
             if (has) select.value = stored;
           }
         }
-        const selectedSource = select.value; // STRING: colId
-        const selectedColumn = catchColumn(choices, selectedSource); // OBJET: méta
+        const selectedSource = select.value;
+        const selectedColumn = catchColumn(choices, selectedSource);
         if (!selectedColumn) return;
         renderVisibilityUI(selectedColumn);
+        renderFieldsUI(selectedColumn);
         rerenderKanban(selectedColumn, lastRecords, selectedSource);
         // const leadHeader = renderHeader(selectedColumn, lastRecords);
         // createKanban(leadHeader, wrapper, lastRecords, selectedSource);
