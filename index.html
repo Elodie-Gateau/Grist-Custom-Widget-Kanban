@@ -371,7 +371,7 @@
 
         const defaultVisible = fieldMetas
           .map((f) => f.colId || f.id)
-          .slice(0, 5);
+          .slice(0, 3);
 
         for (const fm of fieldMetas) {
           if ((fm.colId || fm.id) === "manualSort") continue;
@@ -517,7 +517,7 @@
             );
 
             if (isDefault) {
-              keys = keys.slice(0, 5);
+              keys = keys.slice(0, 3);
             }
 
             for (const infos of keys) {
