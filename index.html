@@ -504,8 +504,10 @@
       }
 
       // Écouteur d'événements pour le changement de sélection dans le menu déroulant
-      select.addEventListener("change", () => {
+      select.addEventListener("change", async () => {
         const selectedSource = select.value;
+        await setStoredSource(selectedSource);
+
         const selectedColumn = catchColumn(choices, selectedSource);
         if (!selectedColumn) return;
         renderVisibilityUI(selectedColumn);
@@ -519,6 +521,15 @@
         lastRecords = records || [];
 
         await initChoicesOnce();
+        if (select.value === "none") {
+          const stored = getStoredSource();
+          if (stored) {
+            const has = Array.from(select.options).some(
+              (o) => o.value === stored
+            );
+            if (has) select.value = stored;
+          }
+        }
         const selectedSource = select.value; // STRING: colId
         const selectedColumn = catchColumn(choices, selectedSource); // OBJET: méta
         if (!selectedColumn) return;
