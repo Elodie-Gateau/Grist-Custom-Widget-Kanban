@@ -208,9 +208,9 @@
         return allHeaders.filter((h) => !hidden.has(norm(h.value)));
       }
       /* ---------------------------------------------
-         Helpers pour reconnaître Choice/ChoiceList
-         et extraire l'ordre des 'choices' depuis widgetOptions
-         --------------------------------------------- */
+               Helpers pour reconnaître Choice/ChoiceList
+               et extraire l'ordre des 'choices' depuis widgetOptions
+               --------------------------------------------- */
       function isChoiceLike(colMeta) {
         const wo = safeParse(colMeta?.widgetOptions);
         // Certaines versions stockent le widget +/ou les choices
@@ -351,20 +351,27 @@
         const fieldMetas = tableCols.filter((c) => {
           const cid = c.colId || c.id || "";
           if (!cid) return false;
+          if (cid === "id") return false;
+          if (cid === "manualSort") return false; //
           if (cid === sourceColId) return false; // on n’affiche pas la colonne Choice dans la carte
           return true;
         });
 
         // set des champs masqués (normalisés)
-        const hidden = new Set(getHiddenFields(tableId, sourceColId).map(norm));
-        const defaultVisible = fieldMetas
-          .map((f) => f.colId || f.id)
-          .slice(0, 6);
 
         fieldsPanel.innerHTML = "<div class='font-medium mb-2'>Champs :</div>";
         const list = document.createElement("div");
         list.className = "grid grid-cols-2 gap-1";
         fieldsPanel.appendChild(list);
+
+        const hiddenArr = getHiddenFields(tableId, sourceColId);
+        const hidden = new Set(hiddenArr.map(norm));
+        const isDefaultMode = hiddenArr.length === 0;
+        const allCids = fieldMetas.map((f) => f.colId || f.id);
+
+        const defaultVisible = fieldMetas
+          .map((f) => f.colId || f.id)
+          .slice(0, 5);
 
         for (const fm of fieldMetas) {
           if ((fm.colId || fm.id) === "manualSort") continue;
@@ -373,10 +380,6 @@
           const row = document.createElement("label");
           row.className = "flex items-center gap-2";
 
-          const hiddenArr = getHiddenFields(tableId, sourceColId);
-          const hidden = new Set(hiddenArr.map(norm));
-          const isDefaultMode = hiddenArr.length === 0;
-
           const cb = document.createElement("input");
           cb.type = "checkbox";
           cb.checked = isDefaultMode
@@ -384,23 +387,39 @@
             : !hidden.has(norm(cid));
 
           cb.addEventListener("change", async () => {
-            const cur = new Set(
-              getHiddenFields(tableId, sourceColId).map(norm)
-            );
-            const key = norm(cid);
-            if (cb.checked) cur.delete(key);
-            else cur.add(key);
-            await setHiddenFields(tableId, sourceColId, Array.from(cur));
+            const hiddenNow = getHiddenFields(tableId, sourceColId).map(norm);
+            const isDefaultNow = hiddenNow.length === 0;
 
-            // re-render immédiat du Kanban
-            const colId = sourceColId;
-            const selectedColumn = catchColumn(choices, colId);
-            if (selectedColumn) {
-              rerenderKanban(selectedColumn, lastRecords, colId);
+            // point de départ des visibles
+            let visibleSet;
+            if (isDefaultNow) {
+              // ⛳️ on part de la photo "5/6 par défaut"
+              visibleSet = new Set(defaultVisible);
+            } else {
+              const hiddenNowSet = new Set(hiddenNow);
+              visibleSet = new Set(
+                allCids.filter((c) => !hiddenNowSet.has(norm(c)))
+              );
             }
 
-            // refresh du panneau
-            renderFieldsUI(colMeta);
+            // appliquer l'action utilisateur
+            if (cb.checked) {
+              visibleSet.add(cid);
+            } else {
+              visibleSet.delete(cid);
+            }
+
+            // nouveaux masqués = complément
+            const newHidden = allCids.filter((c) => !visibleSet.has(c));
+
+            await setHiddenFields(tableId, sourceColId, newHidden);
+
+            // re-render immédiat
+            const selectedColumn = catchColumn(choices, sourceColId);
+            if (selectedColumn) {
+              rerenderKanban(selectedColumn, lastRecords, sourceColId);
+              renderFieldsUI(selectedColumn);
+            }
           });
 
           const span = document.createElement("span");
@@ -490,7 +509,11 @@
             );
 
             let keys = Object.keys(record).filter(
-              (k) => k !== "id" && k !== source && !hiddenFieldSet.has(norm(k))
+              (k) =>
+                k !== "id" &&
+                k !== source &&
+                k !== "manualSort" &&
+                !hiddenFieldSet.has(norm(k))
             );
 
             if (isDefault) {
