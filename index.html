@@ -357,8 +357,8 @@
 
         // set des champs masqués (normalisés)
         const hidden = new Set(getHiddenFields(tableId, sourceColId).map(norm));
-        const defaultVisible = getHiddenFields(tableId, sourceColId)
-          .map(norm)
+        const defaultVisible = fieldMetas
+          .map((f) => f.colId || f.id)
           .slice(0, 5);
 
         fieldsPanel.innerHTML = "<div class='font-medium mb-2'>Champs :</div>";
@@ -367,15 +367,21 @@
         fieldsPanel.appendChild(list);
 
         for (const fm of fieldMetas) {
-          if (fm.colId === "manualSort") return;
+          if ((fm.colId || fm.id) === "manualSort") continue;
           const cid = fm.colId || fm.id;
           const label = fm.label || cid;
           const row = document.createElement("label");
           row.className = "flex items-center gap-2";
 
+          const hiddenArr = getHiddenFields(tableId, sourceColId);
+          const hidden = new Set(hiddenArr.map(norm));
+          const isDefaultMode = hiddenArr.length === 0;
+
           const cb = document.createElement("input");
           cb.type = "checkbox";
-          cb.checked = !hidden.has(norm(cid)) || !defaultVisible.includes(cid); // coché = visible
+          cb.checked = isDefaultMode
+            ? defaultVisible.includes(cid) // mode défaut : 5 premiers
+            : !hidden.has(norm(cid));
 
           cb.addEventListener("change", async () => {
             const cur = new Set(
