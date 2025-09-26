@@ -10,20 +10,18 @@
         Vue Kanban
       </h1>
 
-      <el-select name="sortby" id="sortBy" class="mt-2 block">
+      <select name="sortby" id="sortBy" class="mt-2 block">
         <button
           type="button"
           class="grid w-full cursor-default grid-cols-1 rounded-md bg-white py-1.5 pr-2 pl-3 text-left text-gray-900 outline-1 -outline-offset-1 outline-gray-300 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-indigo-600 sm:text-sm/6"
         >
-          <el-selectedcontent
-            class="col-start-1 row-start-1 flex items-center gap-3 pr-6"
-          >
+          <option class="col-start-1 row-start-1 flex items-center gap-3 pr-6">
             <span class="block truncate" value="none"
               >Choisissez une source</span
             >
-          </el-selectedcontent>
+          </option>
         </button>
-      </el-select>
+      </select>
       <button id="visBtn" class="px-2 py-1 border rounded mb-2">
         Choisir les colonnes
       </button>
@@ -298,7 +296,7 @@
                 "focus-visible:outline-indigo-600",
                 "sm:text-sm/6"
               );
-              const option = document.createElement("el-option");
+              const option = document.createElement("option");
               option.classList.add(
                 "group/option",
                 "relative",
