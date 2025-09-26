@@ -552,7 +552,7 @@
               "shadow-lg",
               "p-3",
               "h-auto",
-              "pointer",
+              "cursor-pointer",
               "bg-white",
               "hover:bg-gray-50",
               "dark:bg-gray-500",
@@ -668,17 +668,17 @@
         columnEl.addEventListener("dragover", (e) => {
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
-          columnEl.classList.add("ring-2");
+          columnEl.classList.add("ring-2 ring-emerald-500");
         });
 
         columnEl.addEventListener("dragleave", () => {
-          columnEl.classList.remove("ring-2");
+          columnEl.classList.remove("ring-2 ring-emerald-500");
         });
 
         // Récupère les infos envoyées par la carte au dragstart et update
         columnEl.addEventListener("drop", async (e) => {
           e.preventDefault();
-          columnEl.classList.remove("ring-2");
+          columnEl.classList.remove("ring-2 ring-emerald-500");
           const rowId = Number(e.dataTransfer.getData("rowId"));
           const fromHeader = e.dataTransfer.getData("fromHeader"); // d'où venait la carte
           const sourceCol = e.dataTransfer.getData("sourceColId"); // sécurité (doit = sourceColId)
