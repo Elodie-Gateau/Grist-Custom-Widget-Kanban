@@ -69,8 +69,17 @@
         return v === null || v === undefined || v === "";
       }
 
+      function sourceKey(source) {
+        return `kanban:source:${source}`; // 1 seule source mémorisée par vue
+      }
+
       function hiddenKey(colId) {
         return `kanban:hidden:${colId}`;
+      }
+
+      function getStoredSource(source) {
+        const v = widgetOptions?.[sourceKey(source)] || "";
+        return v;
       }
 
       function getHiddenFor(colId) {
@@ -83,7 +92,7 @@
         const cols = await getAllColumns();
         allColsMeta = cols;
 
-        // vide d'abord le select (au cas où)
+        // vide d'abord le select
         while (select.options.length > 1) select.remove(1);
         choices = [];
 
@@ -96,7 +105,30 @@
             choices.push(col);
           }
         }
+        // Restaure la source mémorisée (si valide)
+        const stored = getStoredSource();
+        if (stored) {
+          // si l'option existe encore dans la liste, on la sélectionne
+          const has = Array.from(select.options).some(
+            (o) => o.value === stored
+          );
+          if (has) {
+            select.value = stored;
+          }
+        }
+
+        // Si rien n’est sélectionné (ou stored invalide), on prend la 1ère option valide
+        if (select.value === "none" && select.options.length > 1) {
+          select.value = select.options[1].value;
+          await setStoredSource(select.value);
+        }
+
         choicesInitialized = true;
+      }
+
+      async function setStoredSource(source) {
+        await grist.widgetApi.setOption(sourceKey(source)); // persiste dans le doc
+        // après setOption, onOptions sera rappelé automatiquement avec les valeurs à jour
       }
 
       async function setHiddenFor(colId, arr) {
