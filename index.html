@@ -9,26 +9,32 @@
       <h1 class="text-2xl/7 font-bold text-gray-900 dark:text-white mb-4">
         Vue Kanban
       </h1>
-      <div class="flex justify-around items-center gap-4 p-4">
-        <select
-          name="sortby"
-          id="sortBy"
-          class="rounded-lg border-slate-300 p-3 bg-slate-50 dark:bg-slate-800"
-        >
-          <option value="none" selected>Choisissez une source</option>
+      <div
+        class="flex justify-start items-center gap-6 p-4 mb-3 bg-slate-50 dark:bg-slate-500"
+      >
+        <select name="sortby" id="sortBy" class="rounded-lg p-3 text-sm">
+          <option class="text-sm" value="none" selected>
+            Choisissez une source
+          </option>
         </select>
-        <button id="visBtn" class="px-2 py-1 border rounded mb-2">
-          Choisir les colonnes
+        <button
+          id="visBtn"
+          class="text-sm px-3 py-1 border-none bg-slate-50 rounded mb-2 dark:bg-slate-500"
+        >
+          Affichage colonnes
         </button>
         <div id="visPanel" class="p-2 border rounded mb-3 hidden"></div>
-        <button id="fieldsBtn" class="px-2 py-1 border rounded mb-2">
-          Choisir les champs
+        <button
+          id="fieldsBtn"
+          class="text-sm px-3 py-1 border-none bg-slate-50 rounded mb-2 dark:bg-slate-500"
+        >
+          Affichage champs
         </button>
         <div id="fieldsPanel" class="p-2 border rounded mb-3 hidden"></div>
       </div>
       <div
         id="wrapper"
-        class="text-xs mx-full max-w-7xl items-stretch justify-between flex divide-x-2 divide-slate-200"
+        class="text-xs mx-full max-w-7xl items-stretch justify-between flex gap-2 divide-x-2 divide-slate-200"
       ></div>
     </div>
     <script>
@@ -274,9 +280,9 @@
               const option = document.createElement("option");
               option.classList.add(
                 "text-sm",
-                "text-gray-900",
+
                 "select-none",
-                "focus:bg-indigo-600",
+                "focus:bg-cyan-600",
                 "focus:text-white"
               );
 
@@ -525,7 +531,7 @@
               "cursor:pointer",
               "bg-white",
               "hover:bg-gray-50",
-              "dark:bg-gray-800",
+              "dark:bg-gray-500",
               "dark:hover:bg-gray-700"
             );
 
