@@ -357,6 +357,7 @@
 
         // set des champs masqués (normalisés)
         const hidden = new Set(getHiddenFields(tableId, sourceColId).map(norm));
+        const defaultVisible = fieldMetas.slice(0, 5);
 
         fieldsPanel.innerHTML = "<div class='font-medium mb-2'>Champs :</div>";
         const list = document.createElement("div");
@@ -364,7 +365,7 @@
         fieldsPanel.appendChild(list);
 
         for (const fm of fieldMetas) {
-          console.log(fm);
+          if (fm.colId === "manualSort") return;
           const cid = fm.colId || fm.id;
           const label = fm.label || cid;
           const row = document.createElement("label");
@@ -372,7 +373,7 @@
 
           const cb = document.createElement("input");
           cb.type = "checkbox";
-          cb.checked = !hidden.has(norm(cid)); // coché = visible
+          cb.checked = !hidden.has(norm(cid)) && !defaultVisible.includes(cid); // coché = visible
 
           cb.addEventListener("change", async () => {
             const cur = new Set(
