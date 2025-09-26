@@ -359,7 +359,8 @@
         const all = [empty, ...getChoicesFromMeta(colMeta)]; // toutes les colonnes possibles
         const hidden = new Set(getHiddenFor(colId).map(norm));
 
-        visPanel.innerHTML = "<div class='font-medium mb-2'>Colonnes :</div>";
+        visPanel.innerHTML =
+          "<div class='font-medium mb-2 text-sm'>Colonnes :</div>";
         const list = document.createElement("div");
         list.className = "grid grid-cols-2 gap-1";
         visPanel.appendChild(list);
