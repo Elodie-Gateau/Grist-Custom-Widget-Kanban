@@ -359,7 +359,7 @@
         const hidden = new Set(getHiddenFields(tableId, sourceColId).map(norm));
         const defaultVisible = fieldMetas
           .map((f) => f.colId || f.id)
-          .slice(0, 5);
+          .slice(0, 6);
 
         fieldsPanel.innerHTML = "<div class='font-medium mb-2'>Champs :</div>";
         const list = document.createElement("div");
