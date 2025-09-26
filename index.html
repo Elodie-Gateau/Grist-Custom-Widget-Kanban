@@ -485,7 +485,14 @@
 
           const head = document.createElement("h2");
           head.textContent = item.value;
-          head.classList.add("title", "bg-primary");
+          head.classList.add(
+            "w-full",
+            "p-4",
+            "text-center",
+            "font-semibold",
+            "bg-emerald-500",
+            "text-white"
+          );
           column.prepend(head);
 
           // const colId = source;
