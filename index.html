@@ -70,7 +70,7 @@
       }
 
       function sourceKey(source) {
-        return `kanban:source:${source}`; // 1 seule source mémorisée par vue
+        return "kanban:source"; // 1 seule source mémorisée par vue
       }
 
       function hiddenKey(colId) {
@@ -78,7 +78,7 @@
       }
 
       function getStoredSource(source) {
-        const v = widgetOptions?.[sourceKey(source)] || "";
+        const v = widgetOptions?.[sourceKey(s)] || "";
         return v;
       }
 
@@ -127,7 +127,7 @@
       }
 
       async function setStoredSource(source) {
-        await grist.widgetApi.setOption(sourceKey(source)); // persiste dans le doc
+        await grist.widgetApi.setOption(sourceKey(), source); // persiste dans le doc
         // après setOption, onOptions sera rappelé automatiquement avec les valeurs à jour
       }
 
