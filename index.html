@@ -480,10 +480,18 @@
               "h-auto",
               "pointer"
             );
-            for (const infos in record) {
-              if (infos === "id" || infos === sourceColId) continue;
-              if (hiddenFieldSet.has(norm(infos))) continue;
+            const isDefault = hiddenFields.length === 0;
 
+            let keys = Object.keys(record).filter(
+              (k) =>
+                k !== "id" && k !== sourceColId && !hiddenFieldSet.has(norm(k))
+            );
+
+            if (isDefault) {
+              keys = keys.slice(0, 5);
+            }
+
+            for (const infos of keys) {
               const row = document.createElement("div");
               row.classList.add("flex", "gap-2", "items-center");
               const titleItem = document.createElement("h3");
@@ -617,8 +625,6 @@
         renderVisibilityUI(selectedColumn);
         renderFieldsUI(selectedColumn);
         rerenderKanban(selectedColumn, lastRecords, selectedSource);
-        // const leadHeader = renderHeader(selectedColumn, lastRecords);
-        // createKanban(leadHeader, wrapper, lastRecords, selectedSource);
       });
 
       // Écouteurs d'événements Grist
@@ -643,8 +649,6 @@
         renderVisibilityUI(selectedColumn);
         renderFieldsUI(selectedColumn);
         rerenderKanban(selectedColumn, lastRecords, selectedSource);
-        // const leadHeader = renderHeader(selectedColumn, lastRecords);
-        // createKanban(leadHeader, wrapper, lastRecords, selectedSource);
       });
 
       grist.onRecord((record) => {});
