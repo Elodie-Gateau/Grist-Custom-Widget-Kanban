@@ -469,14 +469,14 @@
           list.appendChild(row);
         }
       }
-
       fieldsBtn.addEventListener("click", () => {
         fieldsPanel.classList.toggle("hidden");
         const isHidden = fieldsPanel.classList.toggle("hidden");
-        console.log(isHidden);
-        fieldsBtn.textContent = isHidden
-          ? "Afficher les champs"
-          : "Masquer les champs";
+        if (isHidden) {
+          fieldsBtn.textContent = "Afficher les champs";
+        } else {
+          ("Masquer les champs");
+        }
       });
 
       // Fonction pour créer les éléments d'en-tête dans le DOM
