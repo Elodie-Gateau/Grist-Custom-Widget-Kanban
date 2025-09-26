@@ -23,14 +23,14 @@
 
         <button
           id="visBtn"
-          class="text-sm p-3 border-none bg-white rounded dark:bg-slate-500 shadow-md"
+          class="text-sm p-3 border-none bg-white rounded dark:bg-slate-500 shadow-md hover:bg-emerald-500 hover:text-white"
         >
           Afficher les colonnes
         </button>
 
         <button
           id="fieldsBtn"
-          class="text-sm p-3 border-none bg-white rounded dark:bg-slate-500 shadow-md"
+          class="text-sm p-3 border-none bg-white rounded dark:bg-slate-500 shadow-md hover:bg-emerald-500 hover:text-white"
         >
           Afficher les champs
         </button>
@@ -340,7 +340,7 @@
         const hidden = new Set(getHiddenFor(colId).map(norm));
 
         visPanel.innerHTML =
-          "<div class='font-medium mb-2 text-sm'>Colonnes :</div>";
+          "<div class='font-medium mb-2 text-sm font-bold'>Colonnes :</div>";
         const list = document.createElement("div");
         list.className = "grid grid-cols-2 gap-1 text-sm";
         visPanel.appendChild(list);
@@ -368,13 +368,12 @@
         }
       }
 
+      const visClass = visPanel.classList;
       visBtn.addEventListener("click", () => {
-        visPanel.classList.toggle("hidden");
-        const isHidden = visPanel.classList.toggle("hidden");
-        // Si le panel est caché, on propose d'afficher ; sinon on propose de masquer
-        visBtn.textContent = isHidden
-          ? "Afficher les colonnes"
-          : "Masquer les colonnes";
+        const isHidden = visClass.toggle("hidden");
+        visBtn.textContent = `${
+          isHidden ? "Afficher les champs" : "Masquer les champs"
+        }`;
       });
 
       // Panneau de gestion des champs affichés dans les cartes
