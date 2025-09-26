@@ -482,13 +482,10 @@
         for (const item of leadHeader) {
           const column = document.createElement("div");
           column.classList.add(
-            "column",
-
-            "w-full",
-            "flex",
-            "flex-col",
+            "grid",
+            "auto-rows-fr",
+            "self-stretch",
             "gap-4",
-            "items-center",
             "bg-slate-50",
             "rounded-lg"
           );
@@ -541,13 +538,12 @@
 
             const card = document.createElement("div");
             card.classList.add(
-              "card",
-              "w-80",
+              "w-5/6",
               "rounded-lg",
               "shadow-lg",
               "p-3",
-              "h-auto",
-              "cursor:pointer",
+              "h-full",
+              "pointer",
               "bg-white",
               "hover:bg-gray-50",
               "dark:bg-gray-500",
