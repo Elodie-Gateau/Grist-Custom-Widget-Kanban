@@ -112,6 +112,194 @@
         return `kanban:hiddenFields:${tableId}:${sourceColId}`;
       }
 
+      function getColMetaById(colId) {
+        return allColsMeta.find((c) => (c.colId || c.id) === colId) || null;
+      }
+
+      function parseWidgetOptions(meta) {
+        try {
+          return meta?.widgetOptions ? JSON.parse(meta.widgetOptions) : null;
+        } catch {
+          return null;
+        }
+      }
+      function getFieldType(meta) {
+        if (!meta) return "Unknown";
+        const raw = String(meta.type || "").toLowerCase();
+        const wo = parseWidgetOptions(meta);
+
+        // Widget explicite
+        const w = (wo?.widget || "").toLowerCase();
+        if (w === "choice") return "Choice";
+        if (w === "choicelist") return "ChoiceList";
+
+        // Type brut Grist
+        if (raw.startsWith("reflist")) return "RefList";
+        if (raw.startsWith("ref")) return "Ref";
+
+        if (raw.includes("choice"))
+          return raw.includes("list") ? "ChoiceList" : "Choice";
+        if (raw.includes("date") && raw.includes("time")) return "DateTime";
+        if (raw.includes("date")) return "Date";
+        if (raw.includes("bool")) return "Bool";
+        if (raw.includes("attach")) return "Attachments";
+        if (raw.includes("num") || raw.includes("int") || raw.includes("float"))
+          return "Number";
+        if (raw.includes("text") || raw === "") return "Text";
+
+        // fallback
+        return meta.type || "Text";
+      }
+
+      // Essaie d'identifier le type "visuel" appliqué à la colonne (percent, currency, etc.)
+      function getDisplayStyle(meta) {
+        const wo = parseWidgetOptions(meta) || {};
+        console.log("WidgetOptions", wo);
+        const rawType = String(meta?.type || "").toLowerCase();
+
+        // Récupération de champs candidats fréquents
+        const widget = (wo.widget || "").toLowerCase();
+        const numMode = (wo.numMode || "").toLowerCase();
+        const numFormat = wo.numFormat || wo.format || "";
+        const decimals = wo.decimals ?? wo.precision ?? wo.fracDigits ?? null;
+        const currency = wo.currency || wo.currencyCode || wo.symbol || null;
+        const unit = wo.unit || wo.suffix || null;
+
+        const dateFormat = wo.dateFormat || null;
+        const timeFormat = wo.timeFormat || null;
+        const align = wo.align || wo.alignment || null;
+
+        //Number
+        const isNumberLike =
+          rawType.includes("num") ||
+          rawType.includes("number") ||
+          rawType.includes("int") ||
+          rawType.includes("float") ||
+          rawType === "numeric";
+
+        //Percent
+        const looksPercent =
+          numMode === "percent" ||
+          widget === "percent" ||
+          /%/.test(String(numFormat)) ||
+          unit === "%" ||
+          (isNumberLike && wo.percent === true);
+
+        //Currency
+        const looksCurrency =
+          numMode === "currency" ||
+          widget === "currency" ||
+          currency != null ||
+          /[$€£¥]/.test(String(numFormat));
+
+        //Date
+        const isDateTime = rawType.includes("datetime");
+        const isDate = rawType.includes("date") && !isDateTime;
+        const isTime = rawType.includes("time") && !isDateTime;
+
+        // Construction d'un objet
+        if (isNumberLike) {
+          if (looksPercent) {
+            return {
+              kind: "percent",
+              decimals: decimals ?? 0,
+              format: numFormat || null,
+              unit: unit || "%",
+              align: align || "right",
+            };
+          }
+          if (looksCurrency) {
+            return {
+              kind: "currency",
+              currency: currency || guessCurrencyFromFormat(numFormat) || "EUR",
+              decimals: decimals ?? 2,
+              format: numFormat || null,
+              align: align || "right",
+            };
+          }
+          return {
+            kind: "number",
+            decimals: decimals ?? guessDecimalsFromFormat(numFormat),
+            format: numFormat || null,
+            align: align || "right",
+            unit: unit || null,
+          };
+        }
+
+        if (isDateTime) {
+          return {
+            kind: "datetime",
+            dateFormat: dateFormat || guessDateFormat(dateFormat),
+            timeFormat: timeFormat || guessTimeFormat(timeFormat),
+            align: align || "left",
+          };
+        }
+        if (isDate) {
+          return {
+            kind: "date",
+            dateFormat: dateFormat || guessDateFormat(dateFormat),
+            align: align || "left",
+          };
+        }
+        if (isTime) {
+          return {
+            kind: "time",
+            timeFormat: timeFormat || guessTimeFormat(numFormat),
+            align: align || "left",
+          };
+        }
+
+        // Choice / ChoiceList / Ref / Text / Attachments...
+        return {
+          kind: "default",
+          align: align || (rawType.includes("text") ? "left" : "left"),
+        };
+      }
+
+      // Helpers
+      function guessCurrencyFromFormat(fmt) {
+        if (!fmt) return null;
+        if (fmt.includes("€")) return "EUR";
+        if (fmt.includes("$")) return "USD";
+        if (fmt.includes("£")) return "GBP";
+        if (fmt.includes("¥")) return "JPY";
+        return null;
+      }
+      function guessDecimalsFromFormat(fmt) {
+        if (!fmt) return null;
+        const m = fmt.match(/\.0+/);
+        return m ? m[0].length - 1 : null;
+      }
+      function guessDateFormat(fmt) {
+        if (!fmt) return null;
+        // Heuristique simple sur tokens classiques
+        if (/YYYY.*MM.*DD/i.test(fmt)) return "YYYY-MM-DD";
+        if (/DD.*MM.*YYYY/i.test(fmt)) return "DD/MM/YYYY";
+        if (/MM.*DD.*YYYY/i.test(fmt)) return "MM/DD/YYYY";
+        return null;
+      }
+      function guessTimeFormat(fmt) {
+        if (!fmt) return null;
+        if (/HH.*mm.*ss/i.test(fmt)) return "HH:mm:ss";
+        if (/HH.*mm/i.test(fmt)) return "HH:mm";
+        if (/hh.*mm.*a/i.test(fmt)) return "hh:mm a";
+        return null;
+      }
+
+      const DOC_ENV = (() => {
+        const p = new URLSearchParams(location.search);
+        const tz =
+          Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris";
+        return {
+          culture: p.get("culture") || navigator.language || "fr-FR",
+          currency: p.get("currency") || "EUR",
+          timeZone: p.get("timeZone")
+            ? decodeURIComponent(p.get("timeZone"))
+            : tz,
+          language: p.get("language") || navigator.language || "fr-FR",
+        };
+      })();
+
       // Getter et Setter pour les options persistées
 
       function getStoredSource(source) {
@@ -138,11 +326,9 @@
 
       async function initChoicesOnce() {
         if (choicesInitialized) return;
-        // on est sûrs d'être *après* la liaison (onRecords vient d'arriver)
         const cols = await getAllColumns();
-        allColsMeta = cols;
 
-        // vide d'abord le select
+        allColsMeta = cols;
         while (select.options.length > 1) select.remove(1);
         choices = [];
 
@@ -174,17 +360,16 @@
         }
 
         choicesInitialized = true;
+        // debugDumpColumnFormats();
       }
 
       async function setStoredSource(source) {
         await grist.widgetApi.setOption(sourceKey(), source); // persiste dans le doc
-        // après setOption, onOptions sera rappelé automatiquement avec les valeurs à jour
       }
 
       async function setHiddenFor(colId, arr) {
         widgetOptions[hiddenKey(colId)] = arr; // met à jour le cache local
-        await grist.widgetApi.setOption(hiddenKey(colId), arr); // persiste dans le doc
-        // après setOption, onOptions sera rappelé automatiquement avec les valeurs à jour
+        await grist.widgetApi.setOption(hiddenKey(colId), arr);
       }
 
       // Initialisation de l'ID de la table actuelle
@@ -216,13 +401,24 @@
         const tableRef = tables.id[tables.tableId.indexOf(tableId)];
         for (const index in columns.parentId) {
           if (columns.parentId[index] === tableRef) {
-            // On reconstruit une "ligne" objet depuis la table en colonnes
             tableColumns.push(
               Object.fromEntries(fields.map((f) => [f, columns[f][index]]))
             );
           }
         }
         return tableColumns;
+      }
+      function debugDumpColumnFormats() {
+        console.group("GRIST Column Formats");
+        for (const c of allColsMeta) {
+          const colId = c.colId || c.id;
+          const t = getFieldType(c);
+          const style = getDisplayStyle(c);
+          console.log({
+            displayStyle: style,
+          });
+        }
+        console.groupEnd();
       }
 
       // Fonction pour reconstruire la liste des en-têtes visibles en fonction des colonnes masquées
@@ -331,6 +527,160 @@
         const headers = order.map((value, index) => ({ index, value }));
         headers.unshift({ index: 0, value: empty });
         return headers;
+      }
+
+      function formatValueForDisplay(value, style) {
+        if (value == null || value === "") return "";
+
+        // Numbers + variations
+        if (style?.kind === "percent") {
+          const decimals = style.decimals ?? 0;
+          // si valeur <= 1 et >= -1, traite comme ratio → x100
+          const n =
+            Math.abs(Number(value)) <= 1 ? Number(value) * 100 : Number(value);
+          return `${n.toLocaleString(DOC_ENV.culture, {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+          })} %`;
+        }
+
+        if (style?.kind === "currency") {
+          const decimals = style.decimals ?? 2;
+          const ccy = style.currency || DOC_ENV.currency || "EUR";
+          return Number(value).toLocaleString(DOC_ENV.culture, {
+            style: "currency",
+            currency: ccy,
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+          });
+        }
+
+        if (style?.kind === "number") {
+          const decimals = style.decimals ?? 0;
+          return Number(value).toLocaleString(DOC_ENV.culture, {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+          });
+        }
+
+        return String(value);
+      }
+
+      function renderBool(value) {
+        const wrap = document.createElement("span");
+        wrap.className = "inline-flex items-center gap-1";
+        const icon = document.createElement("span");
+        icon.className =
+          "inline-flex items-center justify-center w-4 h-4 rounded border";
+        if (value === true) {
+          icon.classList.add(
+            "bg-emerald-500",
+            "border-emerald-500",
+            "text-white"
+          );
+          icon.textContent = "✓";
+        } else if (value === false) {
+          icon.classList.add(
+            "bg-transparent",
+            "border-slate-300",
+            "text-slate-400"
+          );
+          icon.textContent = "✕";
+        } else {
+          // null / vide
+          icon.classList.add(
+            "bg-transparent",
+            "border-slate-300",
+            "text-slate-300"
+          );
+          icon.textContent = "–";
+        }
+        wrap.appendChild(icon);
+        return wrap;
+      }
+
+      function renderChoice(meta, raw) {
+        const span = document.createElement("span");
+        span.className = "inline-flex items-center gap-1";
+        const dot = document.createElement("span");
+        dot.className = "inline-block w-2 h-2 rounded-full";
+
+        span.appendChild(dot);
+        span.appendChild(document.createTextNode(String(raw ?? "")));
+        return span;
+      }
+
+      function renderChoiceList(meta, arr) {
+        const frag = document.createDocumentFragment();
+        (arr || []).forEach((val) => {
+          const chip = document.createElement("span");
+          chip.className =
+            "inline-block text-[10px] px-2 py-0.5 mr-1 mb-1 rounded";
+
+          chip.style.color = "#111827";
+          chip.textContent = val;
+          frag.appendChild(chip);
+        });
+        return frag;
+      }
+
+      function renderRef(raw) {
+        // Par défaut on affiche l’ID (#123). Pour afficher le libellé de la table référencée,
+        // il faudrait une jointure via docApi (possible mais plus long).
+        const span = document.createElement("span");
+        span.textContent = raw == null ? "" : `#${raw}`;
+        return span;
+      }
+
+      /**
+       * Retourne un élément DOM formaté selon le type.
+       * - Utilise ton formatValueForDisplay pour Number/Currency/Percent.
+       * - Aligne à droite les numériques.
+       */
+      function renderFieldValue(meta, fieldType, style, raw) {
+        // Bool -> coche
+        if (fieldType === "Bool") {
+          return renderBool(raw);
+        }
+
+        // ChoiceList -> chips colorées
+        if (fieldType === "ChoiceList" && Array.isArray(raw)) {
+          return renderChoiceList(meta, raw);
+        }
+
+        // Choice -> pastille + libellé
+        if (fieldType === "Choice" && typeof raw === "string") {
+          return renderChoice(meta, raw);
+        }
+
+        // Ref / RefList (simple: affiche IDs)
+        if (fieldType === "Ref") {
+          return renderRef(raw);
+        }
+        if (fieldType === "RefList" && Array.isArray(raw)) {
+          const span = document.createElement("span");
+          span.textContent = raw.map((r) => `#${r}`).join(", ");
+          return span;
+        }
+
+        // Number / Currency / Percent -> texte formaté + alignement
+        if (
+          style?.kind === "number" ||
+          style?.kind === "currency" ||
+          style?.kind === "percent"
+        ) {
+          const p = document.createElement("p");
+          p.textContent = formatValueForDisplay(raw, style);
+          if (style?.align === "right")
+            p.classList.add("text-right", "self-stretch");
+          return p;
+        }
+
+        // Date/DateTime/Time : laisse tel quel (ou ajoute un parse/format ici si tes valeurs sont ISO)
+        // Par défaut: texte
+        const p = document.createElement("p");
+        p.textContent = raw == null ? "" : String(raw);
+        return p;
       }
 
       // Fonction pour afficher le panneau de gestion de la visibilité des colonnes
@@ -571,8 +921,11 @@
             if (isDefault) {
               keys = keys.slice(0, 3);
             }
-
+            const fieldsTypes = [];
             for (const infos of keys) {
+              const meta = getColMetaById(infos);
+              const fieldType = getFieldType(meta);
+              const style = getDisplayStyle(meta);
               const row = document.createElement("div");
               row.classList.add(
                 "flex",
@@ -584,10 +937,13 @@
               const titleItem = document.createElement("p");
               titleItem.innerHTML = `${infos}&nbsp;:`;
               titleItem.classList.add("font-semibold");
-              const contentItem = document.createElement("p");
-              contentItem.textContent = record[infos];
+              // const contentItem = document.createElement("p");
+
+              const raw = record[infos];
+              const contentEl = renderFieldValue(meta, fieldType, style, raw);
+
               row.appendChild(titleItem);
-              row.appendChild(contentItem);
+              row.appendChild(contentEl);
               card.appendChild(row);
             }
             column.appendChild(card);
