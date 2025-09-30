@@ -154,7 +154,6 @@
       // Essaie d'identifier le type "visuel" appliqué à la colonne (percent, currency, etc.)
       function getDisplayStyle(meta) {
         const wo = parseWidgetOptions(meta) || {};
-        console.log("WidgetOptions", wo);
         const rawType = String(meta?.type || "").toLowerCase();
 
         // Récupération de champs candidats fréquents
@@ -299,6 +298,58 @@
           language: p.get("language") || navigator.language || "fr-FR",
         };
       })();
+
+      function intlOptionsFromGristPatterns(
+        datePattern = "",
+        timePattern = "",
+        { timeZone } = {}
+      ) {
+        const o = { timeZone };
+
+        // ---- DATE ---- (détection par présence de token, pas égalité)
+        if (datePattern) {
+          // Year
+          if (datePattern.includes("YYYY")) o.year = "numeric";
+          else if (datePattern.includes("YY")) o.year = "2-digit";
+
+          // Month
+          if (datePattern.includes("MMMM")) o.month = "long";
+          else if (datePattern.includes("MMM")) o.month = "short";
+          else if (datePattern.includes("MM")) o.month = "2-digit";
+          else if (datePattern.includes("M")) o.month = "numeric";
+
+          // Day
+          if (datePattern.includes("DD")) o.day = "2-digit";
+          else if (datePattern.includes("Do") || datePattern.includes("D"))
+            o.day = "numeric";
+        }
+
+        // ---- TIME ----
+        if (timePattern) {
+          const hasSeconds = timePattern.includes("ss");
+          const hasMinutes =
+            timePattern.includes("mm") || timePattern.includes("m");
+          const is12h = timePattern.includes("h"); // 'h' → 12h
+          const is24h = timePattern.includes("HH"); // 'HH' → 24h
+
+          if (is12h) {
+            o.hour = timePattern.includes("hh") ? "2-digit" : "numeric";
+            o.hour12 = true;
+          } else if (is24h) {
+            o.hour = "2-digit";
+            o.hour12 = false;
+            o.hourCycle = "h23";
+          }
+
+          if (hasMinutes)
+            o.minute = timePattern.includes("mm") ? "2-digit" : "numeric";
+          if (hasSeconds) o.second = "2-digit";
+
+          if (timePattern.includes(" z")) o.timeZoneName = "short";
+        }
+
+        return o;
+      }
 
       // Getter et Setter pour les options persistées
 
@@ -565,7 +616,15 @@
 
         return String(value);
       }
+      function renderDate(value) {
+        if (!value) return "";
 
+        return d.toLocaleDateString(DOC_ENV.culture, {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        });
+      }
       function renderBool(value) {
         const wrap = document.createElement("span");
         wrap.className = "inline-flex items-center gap-1";
@@ -676,8 +735,44 @@
           return p;
         }
 
-        // Date/DateTime/Time : laisse tel quel (ou ajoute un parse/format ici si tes valeurs sont ISO)
-        // Par défaut: texte
+        // Date/DateTime/Time
+
+        if (
+          style?.kind === "date" ||
+          style?.kind === "datetime" ||
+          style?.kind === "time"
+        ) {
+          const p = document.createElement("p");
+
+          // 1) Construire un objet Date valide
+          const dateObj = new Date(raw); // si besoin je peux te donner un toDateObj() plus robuste
+
+          // 2) Récupérer locale & fuseau depuis DOC_ENV
+          const locale = DOC_ENV.culture || navigator.language || "fr-FR";
+          const tz =
+            DOC_ENV.timeZone ||
+            Intl.DateTimeFormat().resolvedOptions().timeZone ||
+            "Europe/Paris";
+
+          // 3) Déterminer les options Intl selon les patterns Grist
+          const datePattern = style?.dateFormat || ""; // ex: "YYYY-MM-DD"
+          const timePattern = style?.timeFormat || ""; // ex: "HH:mm:ss"
+          const options = intlOptionsFromGristPatterns(
+            datePattern,
+            timePattern,
+            { timeZone: tz }
+          );
+
+          // 4) Formatter
+          p.textContent = new Intl.DateTimeFormat(locale, options).format(
+            dateObj
+          );
+
+          if (style?.align === "right")
+            p.classList.add("text-right", "self-stretch");
+          return p;
+        }
+
         const p = document.createElement("p");
         p.textContent = raw == null ? "" : String(raw);
         return p;
@@ -921,7 +1016,6 @@
             if (isDefault) {
               keys = keys.slice(0, 3);
             }
-            const fieldsTypes = [];
             for (const infos of keys) {
               const meta = getColMetaById(infos);
               const fieldType = getFieldType(meta);
