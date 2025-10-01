@@ -256,6 +256,45 @@
       }
 
       // Helpers
+
+      // Helpers génériques
+      function isNil(v) {
+        return v === null || v === undefined;
+      }
+
+      // --- Helpers robustes pour Ref / RefList -----------------
+      function refIdFromAny(v) {
+        if (isNil(v)) return null;
+        if (typeof v === "number" || typeof v === "string") return v;
+        if (typeof v === "object") {
+          if ("id" in v) return v.id;
+          if ("rowId" in v) return v.rowId;
+          if ("_rowId" in v) return v._rowId;
+        }
+        return null;
+      }
+
+      function refListIdsFromAny(arr) {
+        if (!Array.isArray(arr)) return [];
+        return arr.map(refIdFromAny).filter((x) => !isNil(x));
+      }
+
+      // --- Rendu Référence (Ref) --------------------------------
+      function renderRef(raw) {
+        const id = refIdFromAny(raw);
+        const span = document.createElement("span");
+        span.textContent = isNil(id) ? "" : `#${id}`;
+        return span;
+      }
+
+      // --- Rendu Références multiples (RefList) -----------------
+      function renderRefList(raw) {
+        const ids = refListIdsFromAny(raw);
+        const span = document.createElement("span");
+        span.textContent = ids.length ? ids.map((n) => `#${n}`).join(", ") : "";
+        return span;
+      }
+
       function guessCurrencyFromFormat(fmt) {
         if (!fmt) return null;
         if (fmt.includes("€")) return "EUR";
@@ -375,11 +414,27 @@
         );
       }
 
+      let metaIndex = new Map();
+      function rebuildMetaIndex() {
+        metaIndex.clear();
+        for (const c of allColsMeta) {
+          const cid = c.colId || c.id;
+          if (cid) metaIndex.set(String(cid), c);
+          if (c.id != null) metaIndex.set(String(c.id), c);
+          if (c.label) metaIndex.set(String(c.label), c);
+        }
+      }
+      function getColMetaByAnyKey(key) {
+        return metaIndex.get(String(key)) || null;
+      }
+
       async function initChoicesOnce() {
         if (choicesInitialized) return;
         const cols = await getAllColumns();
 
         allColsMeta = cols;
+        rebuildMetaIndex();
+
         while (select.options.length > 1) select.remove(1);
         choices = [];
 
@@ -457,6 +512,7 @@
             );
           }
         }
+
         return tableColumns;
       }
       function debugDumpColumnFormats() {
@@ -465,9 +521,6 @@
           const colId = c.colId || c.id;
           const t = getFieldType(c);
           const style = getDisplayStyle(c);
-          console.log({
-            displayStyle: style,
-          });
         }
         console.groupEnd();
       }
@@ -683,14 +736,6 @@
         return frag;
       }
 
-      function renderRef(raw) {
-        // Par défaut on affiche l’ID (#123). Pour afficher le libellé de la table référencée,
-        // il faudrait une jointure via docApi (possible mais plus long).
-        const span = document.createElement("span");
-        span.textContent = raw == null ? "" : `#${raw}`;
-        return span;
-      }
-
       /**
        * Retourne un élément DOM formaté selon le type.
        * - Utilise ton formatValueForDisplay pour Number/Currency/Percent.
@@ -716,12 +761,9 @@
         if (fieldType === "Ref") {
           return renderRef(raw);
         }
-        if (fieldType === "RefList" && Array.isArray(raw)) {
-          const span = document.createElement("span");
-          span.textContent = raw.map((r) => `#${r}`).join(", ");
-          return span;
+        if (fieldType === "RefList") {
+          return renderRefList(raw);
         }
-
         // Number / Currency / Percent -> texte formaté + alignement
         if (
           style?.kind === "number" ||
@@ -774,7 +816,15 @@
         }
 
         const p = document.createElement("p");
-        p.textContent = raw == null ? "" : String(raw);
+
+        if (raw !== null && raw !== undefined) {
+          p.textContent =
+            typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+        } else {
+          p.textContent = "—";
+        }
+
+        p.classList.add("text-slate-800");
         return p;
       }
 
@@ -836,7 +886,8 @@
           const cid = c.colId || c.id || "";
           if (!cid) return false;
           if (cid === "id") return false;
-          if (cid === "manualSort") return false; //
+          if (cid === "manualSort") return false;
+          if (cid.includes("gristHelper_Display")) return false;
           if (cid === sourceColId) return false; // on n’affiche pas la colonne Choice dans la carte
           return true;
         });
@@ -1005,21 +1056,34 @@
               "dark:hover:bg-gray-700"
             );
 
-            let keys = Object.keys(record).filter(
-              (k) =>
-                k !== "id" &&
-                k !== source &&
-                k !== "manualSort" &&
-                !hiddenFieldSet.has(norm(k))
-            );
-
+            let candidateCids = allColsMeta
+              .map((c) => c.colId || c.id)
+              .filter(
+                (cid) =>
+                  cid &&
+                  cid !== "id" &&
+                  cid !== source && // ne pas ré-afficher la colonne source
+                  cid !== "manualSort" &&
+                  !cid.includes("gristHelper_Display") &&
+                  !hiddenFieldSet.has(norm(cid))
+              );
+            candidateCids = candidateCids.filter((cid) => cid in record);
+            let keys = candidateCids;
             if (isDefault) {
-              keys = keys.slice(0, 3);
+              const nonEmpty = [];
+              for (const k of keys) {
+                const v = record[k];
+                if (!isEmptyValue(v)) nonEmpty.push(k);
+                if (nonEmpty.length === 3) break;
+              }
+              keys = nonEmpty.length ? nonEmpty : keys.slice(0, 3);
             }
+
             for (const infos of keys) {
-              const meta = getColMetaById(infos);
+              const meta = getColMetaByAnyKey(infos);
               const fieldType = getFieldType(meta);
               const style = getDisplayStyle(meta);
+
               const row = document.createElement("div");
               row.classList.add(
                 "flex",
