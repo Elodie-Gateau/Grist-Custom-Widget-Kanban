@@ -82,17 +82,23 @@
       function norm(s) {
         return (s ?? "")
           .toString()
+          .trim()
           .normalize("NFD")
           .replace(/[\u0300-\u036f]/g, "")
           .toLowerCase();
       }
 
-      function safeParse(json) {
-        try {
-          return json ? JSON.parse(json) : null;
-        } catch {
-          return null;
+      function safeParse(maybeJson) {
+        if (!maybeJson) return null;
+        if (typeof maybeJson === "object") return maybeJson;
+        if (typeof maybeJson === "string") {
+          try {
+            return JSON.parse(maybeJson);
+          } catch {
+            return null;
+          }
         }
+        return null;
       }
 
       function isEmptyValue(v) {
@@ -117,11 +123,7 @@
       }
 
       function parseWidgetOptions(meta) {
-        try {
-          return meta?.widgetOptions ? JSON.parse(meta.widgetOptions) : null;
-        } catch {
-          return null;
-        }
+        return safeParse(meta?.widgetOptions) || null;
       }
       function getFieldType(meta) {
         if (!meta) return "Unknown";
@@ -149,6 +151,144 @@
 
         // fallback
         return meta.type || "Text";
+      }
+
+      function normalizeHex(c) {
+        if (!c || typeof c !== "string") return null;
+        let v = c.trim();
+        // certaines versions stockent "ffffff" (sans #) ou "FFFFFFFF"
+        if (!v.startsWith("#") && /^[0-9a-fA-F]{6,8}$/.test(v)) v = "#" + v;
+        return v;
+      }
+      function pickBg(opt) {
+        const c =
+          opt?.fillColor ??
+          opt?.fillcolor ??
+          opt?.color ??
+          opt?.bgColor ??
+          null;
+        return normalizeHex(c);
+      }
+
+      function pickFg(opt) {
+        const c = opt?.textColor ?? opt?.textcolor ?? null;
+        return normalizeHex(c);
+      }
+
+      function safeParseWidget(meta) {
+        const raw = meta?.widgetOptions;
+        if (!raw) return null;
+        if (typeof raw === "object") return raw;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return null;
+        }
+      }
+
+      function buildChoiceColorMap(meta) {
+        const wo = safeParse(meta?.widgetOptions) || {};
+        const map = new Map();
+
+        const push = (label, opt) => {
+          const L = (label ?? "").toString().trim();
+          if (!L) return;
+          const entry = { bg: pickBg(opt), fg: pickFg(opt) };
+          map.set(L, entry); // clé brute
+          map.set(norm(L), entry); // clé normalisée (sans accents/casse)
+        };
+
+        if (Array.isArray(wo.choices)) {
+          for (const c of wo.choices) push(c?.label ?? c?.value, c);
+        } else if (wo.choicesById && typeof wo.choicesById === "object") {
+          for (const id of Object.keys(wo.choicesById)) {
+            const c = wo.choicesById[id];
+            push(c?.label ?? c?.value, c);
+          }
+        }
+
+        return map;
+      }
+
+      // Palette de secours si pas de couleur dans le meta
+      const FALLBACK_COLORS = [
+        "#10B981",
+        "#3B82F6",
+        "#F59E0B",
+        "#EF4444",
+        "#8B5CF6",
+        "#EC4899",
+        "#14B8A6",
+        "#F97316",
+      ];
+
+      function hashStringToIndex(str, mod) {
+        let h = 0;
+        for (let i = 0; i < str.length; i++) {
+          h = (h * 31 + str.charCodeAt(i)) | 0;
+        }
+        return Math.abs(h) % mod;
+      }
+
+      function mapFromChoiceOptions(wo) {
+        const m = new Map();
+        const co =
+          wo?.choiceOptions || wo?.choicesOptions || wo?.choice_options;
+        if (co && typeof co === "object") {
+          for (const [key, opt] of Object.entries(co)) {
+            const label = (opt?.label ?? key ?? "").toString().trim();
+            const entry = { bg: pickBg(opt), fg: pickFg(opt) };
+            if (!label) continue;
+            m.set(label, entry);
+            m.set(norm(label), entry);
+            m.set(norm(key), entry); // au cas où la clé != label
+          }
+        }
+        return m;
+      }
+
+      // Construit une map label -> {bg,fg} depuis choices / choicesById
+      function mapFromChoicesArrays(wo) {
+        const m = new Map();
+        const push = (c) => {
+          const label = (c?.label ?? c?.value ?? "").toString().trim();
+          if (!label) return;
+          const entry = { bg: pickBg(c), fg: pickFg(c) };
+          m.set(label, entry);
+          m.set(norm(label), entry);
+        };
+        if (Array.isArray(wo?.choices)) {
+          for (const c of wo.choices) push(c);
+        } else if (wo?.choicesById && typeof wo.choicesById === "object") {
+          for (const id of Object.keys(wo.choicesById))
+            push(wo.choicesById[id]);
+        }
+        return m;
+      }
+
+      // Cache fusionné par colonne (choiceOptions > choices > fallback)
+      const choiceColorCaches = new Map();
+      function getColorCache(meta) {
+        const colKey = (meta?.colId || meta?.id || "??").toString();
+        if (!choiceColorCaches.has(colKey)) {
+          const wo = safeParseWidget(meta) || {};
+          const cache = new Map();
+          // ordre d'écrasement: d'abord arrays, puis choiceOptions (prioritaire)
+          for (const [k, v] of mapFromChoicesArrays(wo)) cache.set(k, v);
+          for (const [k, v] of mapFromChoiceOptions(wo)) cache.set(k, v);
+          choiceColorCaches.set(colKey, cache);
+        }
+        return choiceColorCaches.get(colKey);
+      }
+
+      function colorForLabel(meta, label) {
+        const L = String(label ?? "");
+        const cache = getColorCache(meta);
+        const hit = cache.get(L) || cache.get(norm(L));
+        if (hit && (hit.bg || hit.fg)) return hit;
+        // fallback déterministe
+        const idx = hashStringToIndex(L, FALLBACK_COLORS.length);
+        return { bg: FALLBACK_COLORS[idx], fg: "#111827" };
       }
 
       // Essaie d'identifier le type "visuel" appliqué à la colonne (percent, currency, etc.)
@@ -283,6 +423,8 @@
       function renderRef(raw) {
         const id = refIdFromAny(raw);
         const span = document.createElement("span");
+        span.className =
+          "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-slate-200";
         span.textContent = isNil(id) ? "" : `#${id}`;
         return span;
       }
@@ -290,9 +432,19 @@
       // --- Rendu Références multiples (RefList) -----------------
       function renderRefList(raw) {
         const ids = refListIdsFromAny(raw);
-        const span = document.createElement("span");
-        span.textContent = ids.length ? ids.map((n) => `#${n}`).join(", ") : "";
-        return span;
+        const wrapper = document.createElement("div");
+        if (ids.length > 0) {
+          for (const id of ids) {
+            const span = document.createElement("span");
+            span.className =
+              "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-slate-200";
+            span.textContent = `#${id}`;
+            wrapper.appendChild(span);
+          }
+        }
+        // const span = document.createElement("span");
+        // span.textContent = ids.length ? ids.map((n) => `#${n}`).join(", ") : "";
+        return wrapper;
       }
 
       function guessCurrencyFromFormat(fmt) {
@@ -678,6 +830,7 @@
           day: "2-digit",
         });
       }
+
       function renderBool(value) {
         const wrap = document.createElement("span");
         wrap.className = "inline-flex items-center gap-1";
@@ -712,24 +865,31 @@
       }
 
       function renderChoice(meta, raw) {
+        const label = String(raw ?? "").trim();
         const span = document.createElement("span");
         span.className = "inline-flex items-center gap-1";
+
         const dot = document.createElement("span");
-        dot.className = "inline-block w-2 h-2 rounded-full";
+        dot.className = "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded";
+
+        const { bg, fg } = colorForLabel(meta, label);
+        if (bg) dot.style.backgroundColor = bg;
+        if (fg) span.style.color = fg;
 
         span.appendChild(dot);
-        span.appendChild(document.createTextNode(String(raw ?? "")));
+        dot.appendChild(document.createTextNode(label));
         return span;
       }
 
       function renderChoiceList(meta, arr) {
-        const frag = document.createDocumentFragment();
+        const frag = document.createElement("div");
+        frag.className = "flex flex-wrap";
         (arr || []).forEach((val) => {
+          const { bg, fg } = colorForLabel(meta, String(val).trim());
           const chip = document.createElement("span");
-          chip.className =
-            "inline-block text-[10px] px-2 py-0.5 mr-1 mb-1 rounded";
-
-          chip.style.color = "#111827";
+          chip.className = "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded";
+          if (bg) chip.style.backgroundColor = bg;
+          if (fg) chip.style.color = fg;
           chip.textContent = val;
           frag.appendChild(chip);
         });
