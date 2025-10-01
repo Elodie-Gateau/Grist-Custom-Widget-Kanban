@@ -566,6 +566,21 @@
         );
       }
 
+      function hiddenFieldsModeKey(tableId, sourceColId) {
+        return `kanban:hiddenFieldsMode:${tableId}:${sourceColId}`;
+      }
+      function getHiddenFieldsMode(tableId, sourceColId) {
+        const v = widgetOptions?.[hiddenFieldsModeKey(tableId, sourceColId)];
+        return v === "all" || v === "custom" ? v : "default";
+      }
+      async function setHiddenFieldsMode(tableId, sourceColId, mode) {
+        await grist.widgetApi.setOption(
+          hiddenFieldsModeKey(tableId, sourceColId),
+          mode
+        );
+        widgetOptions[hiddenFieldsModeKey(tableId, sourceColId)] = mode;
+      }
+
       let metaIndex = new Map();
       function rebuildMetaIndex() {
         metaIndex.clear();
@@ -685,9 +700,9 @@
         return allHeaders.filter((h) => !hidden.has(norm(h.value)));
       }
       /* ---------------------------------------------
-               Helpers pour reconnaître Choice/ChoiceList
-               et extraire l'ordre des 'choices' depuis widgetOptions
-               --------------------------------------------- */
+                           Helpers pour reconnaître Choice/ChoiceList
+                           et extraire l'ordre des 'choices' depuis widgetOptions
+                           --------------------------------------------- */
       function isChoiceLike(colMeta) {
         const wo = safeParse(colMeta?.widgetOptions);
         // Certaines versions stockent le widget +/ou les choices
@@ -984,7 +999,7 @@
           p.textContent = "—";
         }
 
-        p.classList.add("text-slate-800");
+        p.classList.add("text-slate-800", "w-full");
         return p;
       }
 
@@ -1033,82 +1048,129 @@
 
       // Panneau de gestion des champs affichés dans les cartes
       function renderFieldsUI(colMeta) {
-        // colMeta = meta de la SOURCE (Choice)
         const tableCols = allColsMeta;
         const sourceColId = colMeta.colId || colMeta.id;
-
-        // récupère l’ID de table courant que tu as déjà en global (currentTableId)
         const tableId = currentTableId;
         if (!tableId) return;
 
-        // liste des champs affichables dans les cards
+        // champs éligibles
         const fieldMetas = tableCols.filter((c) => {
           const cid = c.colId || c.id || "";
           if (!cid) return false;
           if (cid === "id") return false;
           if (cid === "manualSort") return false;
           if (cid.includes("gristHelper_Display")) return false;
-          if (cid === sourceColId) return false; // on n’affiche pas la colonne Choice dans la carte
+          if (cid === sourceColId) return false;
           return true;
         });
 
-        // set des champs masqués (normalisés)
+        const allCids = fieldMetas.map((f) => f.colId || f.id);
+        const defaultVisible = allCids.slice(0, 3);
+
+        // état persistant actuel
+        const mode = getHiddenFieldsMode(tableId, sourceColId); // "default" | "all" | "custom"
+        const hiddenNow = new Set(
+          getHiddenFields(tableId, sourceColId).map(norm)
+        );
+
+        // construit VISIBLE selon le mode (sans rien changer)
+        const buildVisibleSetFromMode = () => {
+          if (mode === "all") {
+            return new Set(allCids);
+          } else if (mode === "default") {
+            return new Set(defaultVisible);
+          } else {
+            // custom
+            return new Set(allCids.filter((c) => !hiddenNow.has(norm(c))));
+          }
+        };
 
         fieldsPanel.innerHTML =
-          "<div class='font-medium mb-2  text-sm'>Champs :</div>";
+          "<div class='font-medium mb-2 text-sm'>Champs :</div>";
+
+        // --- Master toggle ---
+        const topRow = document.createElement("label");
+        topRow.className = "flex items-center gap-2 mb-2 text-sm";
+        const masterCb = document.createElement("input");
+        masterCb.type = "checkbox";
+        masterCb.checked = mode === "all"; // UNIQUEMENT si mode === 'all'
+        masterCb.addEventListener("click", (e) => e.stopPropagation());
+        masterCb.addEventListener("change", async (e) => {
+          e.stopPropagation();
+          if (masterCb.checked) {
+            // passe explicitement en 'all'
+            await setHiddenFields(tableId, sourceColId, []);
+            await setHiddenFieldsMode(tableId, sourceColId, "all");
+          } else {
+            // revient en 'default' (3 premiers)
+            await setHiddenFields(tableId, sourceColId, []);
+            await setHiddenFieldsMode(tableId, sourceColId, "default");
+          }
+          const selectedColumn = catchColumn(choices, sourceColId);
+          if (selectedColumn) {
+            rerenderKanban(selectedColumn, lastRecords, sourceColId);
+            renderFieldsUI(selectedColumn);
+          }
+        });
+        const masterSpan = document.createElement("span");
+        masterSpan.textContent = "Afficher tous";
+        topRow.appendChild(masterCb);
+        topRow.appendChild(masterSpan);
+        fieldsPanel.appendChild(topRow);
+
+        // --- Liste des champs individuels ---
         const list = document.createElement("div");
-        list.className = "grid grid-cols-2 gap-1  text-sm";
+        list.className = "grid grid-cols-2 gap-1 text-sm";
         fieldsPanel.appendChild(list);
 
-        const hiddenArr = getHiddenFields(tableId, sourceColId);
-        const hidden = new Set(hiddenArr.map(norm));
-        const isDefaultMode = hiddenArr.length === 0;
-        const allCids = fieldMetas.map((f) => f.colId || f.id);
-
-        const defaultVisible = fieldMetas
-          .map((f) => f.colId || f.id)
-          .slice(0, 3);
+        // état d’affichage courant (pour cocher/décocher visuellement)
+        const visibleSetNow = buildVisibleSetFromMode();
 
         for (const fm of fieldMetas) {
-          if ((fm.colId || fm.id) === "manualSort") continue;
           const cid = fm.colId || fm.id;
-          const label = fm.label || cid;
+          if (!cid || cid === "manualSort") continue;
+
           const row = document.createElement("label");
           row.className = "flex items-center gap-2 text-sm";
 
           const cb = document.createElement("input");
           cb.type = "checkbox";
-          cb.checked = isDefaultMode
-            ? defaultVisible.includes(cid)
-            : !hidden.has(norm(cid));
+          cb.checked = visibleSetNow.has(cid);
 
-          cb.addEventListener("change", async () => {
-            const hiddenNow = getHiddenFields(tableId, sourceColId).map(norm);
-            const isDefaultNow = hiddenNow.length === 0;
+          cb.addEventListener("click", (e) => e.stopPropagation());
+          cb.addEventListener("change", async (e) => {
+            e.stopPropagation();
 
-            let visibleSet;
-            if (isDefaultNow) {
-              visibleSet = new Set(defaultVisible);
+            // Repars TOUJOURS de l'état réel AVANT le clic
+            const curMode = getHiddenFieldsMode(tableId, sourceColId);
+            const curHidden = new Set(
+              getHiddenFields(tableId, sourceColId).map(norm)
+            );
+            let curVisible;
+
+            if (curMode === "all") {
+              curVisible = new Set(allCids);
+            } else if (curMode === "default") {
+              curVisible = new Set(defaultVisible);
             } else {
-              const hiddenNowSet = new Set(hiddenNow);
-              visibleSet = new Set(
-                allCids.filter((c) => !hiddenNowSet.has(norm(c)))
+              curVisible = new Set(
+                allCids.filter((c) => !curHidden.has(norm(c)))
               );
             }
 
-            // appliquer l'action utilisateur
+            // Applique l’action utilisateur
             if (cb.checked) {
-              visibleSet.add(cid);
+              curVisible.add(cid);
             } else {
-              visibleSet.delete(cid);
+              curVisible.delete(cid);
             }
 
-            // nouveaux masqués = complément
-            const newHidden = allCids.filter((c) => !visibleSet.has(c));
-
+            // Persiste en 'custom' (NE PAS inférer 'all' si tout est visible)
+            const newHidden = allCids.filter((c) => !curVisible.has(c));
             await setHiddenFields(tableId, sourceColId, newHidden);
+            await setHiddenFieldsMode(tableId, sourceColId, "custom");
 
-            // re-render immédiat
+            // Re-render
             const selectedColumn = catchColumn(choices, sourceColId);
             if (selectedColumn) {
               rerenderKanban(selectedColumn, lastRecords, sourceColId);
@@ -1117,7 +1179,7 @@
           });
 
           const span = document.createElement("span");
-          span.textContent = label;
+          span.textContent = fm.label || cid;
 
           row.appendChild(cb);
           row.appendChild(span);
@@ -1139,10 +1201,10 @@
         wrapper.innerHTML = "";
 
         const tableId = currentTableId;
-
-        const hiddenFields = getHiddenFields(tableId, source);
+        const mode = getHiddenFieldsMode(tableId, sourceColId);
+        const hiddenFields = getHiddenFields(tableId, sourceColId);
         const hiddenFieldSet = new Set(hiddenFields.map(norm));
-        const isDefault = hiddenFields.length === 0;
+        // const isDefault = hiddenFields.length === 0;
 
         for (const item of leadHeader) {
           const column = document.createElement("div");
@@ -1224,19 +1286,27 @@
                   cid !== "id" &&
                   cid !== source && // ne pas ré-afficher la colonne source
                   cid !== "manualSort" &&
-                  !cid.includes("gristHelper_Display") &&
-                  !hiddenFieldSet.has(norm(cid))
+                  !cid.includes("gristHelper_Display")
               );
             candidateCids = candidateCids.filter((cid) => cid in record);
-            let keys = candidateCids;
-            if (isDefault) {
+            let keys;
+            if (mode === "all") {
+              // Tout afficher
+              keys = candidateCids;
+            } else if (mode === "custom") {
+              // Respecter les champs masqués
+              keys = candidateCids.filter(
+                (cid) => !hiddenFieldSet.has(norm(cid))
+              );
+            } else {
+              // default : 3 premiers non vides (fallback 3 premiers)
               const nonEmpty = [];
-              for (const k of keys) {
+              for (const k of candidateCids) {
                 const v = record[k];
                 if (!isEmptyValue(v)) nonEmpty.push(k);
                 if (nonEmpty.length === 3) break;
               }
-              keys = nonEmpty.length ? nonEmpty : keys.slice(0, 3);
+              keys = nonEmpty.length ? nonEmpty : candidateCids.slice(0, 3);
             }
 
             for (const infos of keys) {
