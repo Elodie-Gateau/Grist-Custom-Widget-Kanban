@@ -1279,22 +1279,32 @@
         const hiddenFieldSet = new Set(hiddenFields.map(norm));
         // const isDefault = hiddenFields.length === 0;
         const wrapperAddColumn = document.createElement("div");
-        const addColumn = document.createElement("div");
-        addColumn.classList.add(
-          "p-2",
+        wrapperAddColumn.classList.add(
+          "flex",
           "items-center",
           "bg-emerald-500",
           "rounded-full",
           "self-start",
+          "cursor-pointer",
+          "sticky",
+          "top-0"
+        );
+        const addColumn = document.createElement("div");
+        addColumn.classList.add(
+          "p-2",
+          "flex",
+          "items-center",
+          "justify-center",
           "text-white",
           "text-xl",
           "font-bold",
           "leading-none",
-          "cursor-pointer",
-          "w-1/6",
-          "text-center",
-          "sticky",
-          "top-0"
+          // "cursor-pointer",
+          "w-12",
+          "h-12",
+          "text-center"
+          // "sticky",
+          // "top-0"
         );
         addColumn.textContent = "+";
         wrapperAddColumn.appendChild(addColumn);
@@ -1304,18 +1314,21 @@
           input.type = "text";
           input.placeholder = "Nouvelle colonne";
           input.className =
-            "p-2 w-full rounded border border-emerald-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500";
+            "p-2 rounded border border-emerald-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500";
           addColumn.replaceWith(input);
           const submit = document.createElement("input");
           submit.type = "submit";
           submit.value = "OK";
           submit.className =
-            "p-2 mt-2 w-full rounded bg-emerald-500 text-white font-semibold hover:bg-emerald-600 cursor-pointer";
+            "p-2 mt-2 w-auto rounded bg-emerald-500 text-white font-semibold hover:bg-emerald-600 cursor-pointer";
           wrapperAddColumn.appendChild(submit);
+          wrapperAddColumn.classList.add("gap-2", "w-full", "bg-transparent");
           submit.addEventListener("click", async () => {
             const val = input.value;
             if (val && val.trim()) {
               await addChoiceToSourceColumn(source, val.trim());
+              input.replaceWith(addColumn);
+              submit.classList.add("hidden");
             }
           });
         });
@@ -1324,30 +1337,33 @@
           const column = document.createElement("div");
           column.classList.add(
             "w-full",
+            "min-w-0",
             "flex",
             "flex-col",
             "gap-4",
             "items-center",
             "bg-slate-50",
-            "rounded"
+            "rounded",
+            "py-6"
           );
           wrapper.appendChild(column);
 
           const head = document.createElement("h2");
           const titleHead = document.createElement("span");
           titleHead.textContent = item.value;
-          titleHead.classList.add("p-4", "text-center", "font-semibold");
+          titleHead.classList.add("text-center", "font-semibold");
           head.classList.add(
             "w-full",
+            "min-w-0",
             "flex",
-            "justify-center",
+            "justify-around",
             "items-center",
-            "gap-1",
             "bg-emerald-500",
             "text-white",
             "rounded-t",
             "sticky",
-            "top-0"
+            "top-0",
+            "p-4"
           );
           const countRecord = document.createElement("span"); // badge compteur
           countRecord.textContent = "0";
@@ -1392,6 +1408,7 @@
             card.classList.add(
               "card",
               "w-5/6",
+              "min-w-0",
               "rounded-lg",
               "shadow-lg",
               "p-3",
@@ -1400,7 +1417,8 @@
               "bg-white",
               "hover:bg-emerald-50",
               "dark:bg-gray-500",
-              "dark:hover:bg-gray-700"
+              "dark:hover:bg-gray-700",
+              "overflow-hidden"
             );
 
             let candidateCids = allColsMeta
