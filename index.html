@@ -11,12 +11,12 @@
       <h1 class="text-lg font-bold text-emerald-500 mb-4">Kanban</h1>
 
       <div
-        class="flex justify-start items-center gap-6 p-4 mb-3 bg-slate-50 dark:bg-slate-500, rounded"
+        class="flex justify-start items-center gap-6 p-4 mb-3 bg-gray-50 dark:bg-gray-700 rounded"
       >
         <select
           name="sortby"
           id="sortBy"
-          class="rounded-lg p-3 text-sm shadow-md"
+          class="rounded py-2 px-3 text-sm shadow-md dark:bg-gray-500"
         >
           <option class="text-sm" value="none" selected>
             Choisissez une source
@@ -25,13 +25,13 @@
 
         <button
           id="visBtn"
-          class="text-sm p-3 border-none bg-white rounded dark:bg-slate-500 shadow-md hover:bg-emerald-500 hover:text-white"
+          class="text-sm py-2 px-3 border-none bg-white rounded shadow-md dark:bg-gray-500 hover:bg-emerald-500 hover:text-white"
         >
           Afficher les colonnes
         </button>
         <button
           id="fieldsBtn"
-          class="text-sm p-3 border-none bg-white rounded dark:bg-slate-500 shadow-md hover:bg-emerald-500 hover:text-white"
+          class="text-sm py-2 px-3 border-none bg-white rounded dark:bg-gray-500 shadow-md hover:bg-emerald-500 hover:text-white"
         >
           Afficher les champs
         </button>
@@ -40,11 +40,11 @@
       <div class="flex w-full gap-4 items-start">
         <div
           id="visPanel"
-          class="p-2 w-full bg-white rounded mb-3 hidden"
+          class="p-2 w-full bg-white dark:bg-gray-700 rounded mb-3 hidden"
         ></div>
         <div
           id="fieldsPanel"
-          class="p-2 w-full bg-white rounded mb-3 hidden"
+          class="p-2 w-full bg-white dark:bg-gray-700 rounded mb-3 hidden"
         ></div>
       </div>
 
@@ -648,7 +648,7 @@
         const id = refIdFromAny(raw);
         const span = document.createElement("span");
         span.className =
-          "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-slate-200";
+          "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-gray-200";
         span.textContent = isNil(id) ? "" : `#${id}`;
         return span;
       }
@@ -659,7 +659,7 @@
           for (const id of ids) {
             const span = document.createElement("span");
             span.className =
-              "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-slate-200";
+              "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-gray-200";
             span.textContent = `#${id}`;
             wrapper.appendChild(span);
           }
@@ -721,15 +721,15 @@
         } else if (value === false) {
           icon.classList.add(
             "bg-transparent",
-            "border-slate-300",
-            "text-slate-400"
+            "border-gray-300",
+            "text-gray-400"
           );
           icon.textContent = "✕";
         } else {
           icon.classList.add(
             "bg-transparent",
-            "border-slate-300",
-            "text-slate-300"
+            "border-gray-300",
+            "text-gray-300"
           );
           icon.textContent = "–";
         }
@@ -816,7 +816,7 @@
         } else {
           p.textContent = "—";
         }
-        p.classList.add("text-slate-800", "w-full");
+        p.classList.add("text-gray-800", "w-full");
         return p;
       }
 
@@ -1115,7 +1115,8 @@
             "flex-col",
             "gap-4",
             "items-center",
-            "bg-slate-50",
+            "bg-gray-50",
+            "dark:bg-gray-700",
             "rounded",
             "pb-6"
           );
@@ -1180,7 +1181,7 @@
               "bg-white",
               "hover:bg-emerald-50",
               "dark:bg-gray-500",
-              "dark:hover:bg-gray-700",
+              "dark:hover:bg-emerald-800",
               "overflow-hidden"
             );
             let candidateCids = allColsMeta
@@ -1224,9 +1225,18 @@
               );
               const titleItem = document.createElement("p");
               titleItem.innerHTML = `${infos}&nbsp;:`;
-              titleItem.classList.add("font-semibold");
+              titleItem.classList.add(
+                "font-semibold",
+                "text-gray-800",
+                "dark:text-gray-300"
+              );
               const raw = record[infos];
               const contentEl = renderFieldValue(meta, fieldType, style, raw);
+              contentEl.classList.add(
+                "break-words",
+                "text-gray-900",
+                "dark:text-gray-50"
+              );
               row.appendChild(titleItem);
               row.appendChild(contentEl);
               card.appendChild(row);
