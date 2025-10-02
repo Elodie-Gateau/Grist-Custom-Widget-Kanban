@@ -1051,27 +1051,53 @@
 
         const meta = allColsMeta.find((c) => (c.colId || c.id) === sourceColId);
         if (!meta) throw new Error("Colonne source introuvable");
+        const curWO = safeParse(meta.widgetOptions) || {};
+        const wo = JSON.parse(JSON.stringify(curWO));
+        // Détecter le mode existant
+        const hasChoicesArray = Array.isArray(wo.choices);
+        const hasChoicesById =
+          wo.choicesById && typeof wo.choicesById === "object";
 
-        const wo = safeParse(meta.widgetOptions) || {};
+        // Helper: transformer un tableau hétérogène en tableau de chaînes
+        const toStringArray = (arr) => {
+          const out = [];
+          for (const c of arr) {
+            if (typeof c === "string") out.push(c);
+            else if (
+              c &&
+              (typeof c.label === "string" || typeof c.value === "string")
+            ) {
+              out.push(String(c.label ?? c.value));
+            }
+            // tout le reste est ignoré pour éviter les objets non-string
+          }
+          return out;
+        };
 
-        if (Array.isArray(wo.choices)) {
-          const exists = wo.choices.some(
-            (c) =>
-              (typeof c === "string" ? c : c?.label ?? c?.value) === newLabel
-          );
-          if (!exists) wo.choices.push({ label: newLabel, value: newLabel });
-        } else if (wo.choicesById && typeof wo.choicesById === "object") {
-          const already = Object.values(wo.choicesById).some(
+        if (hasChoicesById) {
+          // MODE RICHE: choicesById uniquement (pas de 'choices' tableau)
+          // 1) Vérifier existence
+          const exists = Object.values(wo.choicesById).some(
             (c) => (c?.label ?? c?.value) === newLabel
           );
-          if (!already) {
+          if (!exists) {
             const key = "opt_" + Math.random().toString(36).slice(2, 9);
             wo.choicesById[key] = { label: newLabel, value: newLabel };
           }
+          // Nettoyage de sécurité: supprimer un éventuel 'choices' hétérogène
+          if (hasChoicesArray) delete wo.choices;
+        } else if (hasChoicesArray) {
+          // MODE SIMPLE: tableau de chaînes uniquement
+          const normalized = toStringArray(wo.choices);
+          if (!normalized.includes(newLabel)) normalized.push(newLabel);
+          wo.choices = normalized;
         } else {
-          wo.choices = [{ label: newLabel, value: newLabel }];
+          // AUCUN FORMAT: on part sur le format SIMPLE et propre
+          wo.choices = [newLabel];
+          delete wo.choicesById;
         }
 
+        // Écrire en base
         await grist.docApi.applyUserActions([
           [
             "UpdateRecord",
@@ -1081,8 +1107,10 @@
           ],
         ]);
 
+        // Mettre à jour le cache local pour éviter tout flicker
         meta.widgetOptions = JSON.stringify(wo);
 
+        // Rafraîchir l’UI
         const selectedSource = select.value;
         const selectedColumn = catchColumn(choices, selectedSource);
         if (selectedColumn) {
@@ -1250,6 +1278,7 @@
         const hiddenFields = getHiddenFields(tableId, sourceColId);
         const hiddenFieldSet = new Set(hiddenFields.map(norm));
         // const isDefault = hiddenFields.length === 0;
+        const wrapperAddColumn = document.createElement("div");
         const addColumn = document.createElement("div");
         addColumn.classList.add(
           "p-2",
@@ -1268,9 +1297,27 @@
           "top-0"
         );
         addColumn.textContent = "+";
-        wrapper.appendChild(addColumn);
+        wrapperAddColumn.appendChild(addColumn);
+        wrapper.appendChild(wrapperAddColumn);
         addColumn.addEventListener("click", async () => {
-          addChoiceToSourceColumn(select.value, libelle);
+          const input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = "Nouvelle colonne";
+          input.className =
+            "p-2 w-full rounded border border-emerald-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500";
+          addColumn.replaceWith(input);
+          const submit = document.createElement("input");
+          submit.type = "submit";
+          submit.value = "OK";
+          submit.className =
+            "p-2 mt-2 w-full rounded bg-emerald-500 text-white font-semibold hover:bg-emerald-600 cursor-pointer";
+          wrapperAddColumn.appendChild(submit);
+          submit.addEventListener("click", async () => {
+            const val = input.value;
+            if (val && val.trim()) {
+              await addChoiceToSourceColumn(source, val.trim());
+            }
+          });
         });
 
         for (const item of leadHeader) {
