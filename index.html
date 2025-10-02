@@ -35,6 +35,13 @@
         >
           Afficher les champs
         </button>
+
+        <button
+          id="dateBtn"
+          class="text-sm py-2 px-3 border-none bg-white rounded dark:bg-slate-500 shadow-md hover:bg-emerald-500 hover:text-white"
+        >
+          Filtre date
+        </button>
       </div>
 
       <div class="flex w-full gap-4 items-start">
@@ -45,6 +52,10 @@
         <div
           id="fieldsPanel"
           class="p-2 w-full bg-white dark:bg-gray-700 rounded mb-3 hidden"
+        ></div>
+        <div
+          id="datePanel"
+          class="p-2 w-full bg-white rounded mb-3 hidden"
         ></div>
       </div>
 
@@ -68,6 +79,8 @@
       const visPanel = document.getElementById("visPanel");
       const fieldsBtn = document.getElementById("fieldsBtn");
       const fieldsPanel = document.getElementById("fieldsPanel");
+      const dateBtn = document.getElementById("dateBtn");
+      const datePanel = document.getElementById("datePanel");
 
       // Constante d'étiquette pour la colonne "vide"
       const empty = "(vide)";
@@ -136,6 +149,8 @@
       function hiddenFieldsKey(tableId, sourceColId) {
         return `kanban:hiddenFields:${tableId}:${sourceColId}`;
       }
+      const DATE_FILTER_FIELD_KEY = "kanban:dateFilter:field";
+      const DATE_FILTER_HIDE_PAST_KEY = "kanban:dateFilter:hidePast";
 
       // =====================================================================
       // 3) MÉTA-DONNÉES COLONNES & TYPES (Grist)
@@ -505,6 +520,20 @@
         await grist.widgetApi.setOption(hiddenKey(colId), arr);
       }
 
+      function getDateFilterField() {
+        return widgetOptions?.[DATE_FILTER_FIELD_KEY] || "";
+      }
+      async function setDateFilterField(colId) {
+        await grist.widgetApi.setOption(DATE_FILTER_FIELD_KEY, colId || "");
+      }
+
+      function getHidePastFlag() {
+        return widgetOptions?.[DATE_FILTER_HIDE_PAST_KEY] === false;
+      }
+      async function setHidePastFlag(flag) {
+        await grist.widgetApi.setOption(DATE_FILTER_HIDE_PAST_KEY, !!flag);
+      }
+
       // =====================================================================
       // 7) INDEX MÉTA & RÉCUPÉRATION DES COLONNES
       // =====================================================================
@@ -606,6 +635,53 @@
           return result;
         }
         return result;
+      }
+
+      // =====================================================================
+      // 8b) HELPERS DATES (détection Date/DateTime, extraction ordre)
+      // =====================================================================
+      // Vrai si la colonne est de type Date ou DateTime (type brut ou widget).
+      function isDateLike(colMeta) {
+        const t = String(colMeta?.type || "").toLowerCase();
+        const w = String(
+          safeParse(colMeta?.widgetOptions)?.widget || ""
+        ).toLowerCase();
+        return t.includes("date") || w === "date" || w === "datetime";
+      }
+
+      // Renvoie une liste de colonnes Date/DateTime {id, colId, label, type}
+      function getDateColumns(allColsMeta) {
+        return (allColsMeta || []).filter(isDateLike).map((c) => ({
+          id: c.id,
+          colId: c.colId || c.id,
+          label: c.label || c.colId || "",
+          type: c.type || "Date",
+        }));
+      }
+
+      // Parse robuste d'une valeur de date venant d'un record (string | number | Date | null)
+      function toDate(value) {
+        if (value == null) return null;
+        if (value instanceof Date) return new Date(value.getTime());
+        if (typeof value === "number") return new Date(value);
+        if (typeof value === "string") {
+          const d = new Date(value);
+          return isNaN(d.getTime()) ? null : d;
+        }
+        // objets Grist exotiques -> on tente un cast
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? null : d;
+      }
+
+      // Vrai si d est strictement avant "aujourd'hui" (en ignorant l'heure)
+      function isPastDate(d, now = new Date()) {
+        if (!(d instanceof Date)) return false;
+        const todayStart = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate()
+        );
+        return d < todayStart;
       }
 
       // =====================================================================
@@ -1036,6 +1112,128 @@
         }`;
       });
 
+      function renderDateFilterUI() {
+        const dateCols = getDateColumns(allColsMeta); // toutes les colonnes date/datetime
+        const current = getDateFilterField();
+        const hidePast = getHidePastFlag();
+
+        // Reset du panneau
+        datePanel.innerHTML = "";
+
+        // Titre
+        const title = document.createElement("div");
+        title.className = "font-medium mb-2 text-sm";
+        title.textContent = "Filtre par date";
+        datePanel.appendChild(title);
+
+        // Conteneur
+        const container = document.createElement("div");
+        container.className = "flex flex-col gap-3";
+        datePanel.appendChild(container);
+
+        // --- Ligne Select (champ date)
+        const rowSelect = document.createElement("label");
+        rowSelect.className = "flex items-center gap-2";
+        container.appendChild(rowSelect);
+
+        const lblSelect = document.createElement("span");
+        lblSelect.className = "text-sm w-40";
+        lblSelect.textContent = "Champ date :";
+        rowSelect.appendChild(lblSelect);
+
+        const selectEl = document.createElement("select");
+        selectEl.id = "dateFilterSelect";
+        selectEl.className = "rounded-lg p-2 text-sm shadow-md";
+        rowSelect.appendChild(selectEl);
+
+        // Option "aucun"
+        const optNone = document.createElement("option");
+        optNone.value = "";
+        optNone.textContent = "— Aucun —";
+        selectEl.appendChild(optNone);
+
+        // Options dynamiques
+        for (const c of dateCols) {
+          const opt = document.createElement("option");
+          opt.value = String(c.colId);
+          opt.textContent = c.label || c.colId;
+          if (c.colId === current) opt.selected = true;
+          selectEl.appendChild(opt);
+        }
+
+        // --- Ligne Checkbox (masquer passé)
+        const rowCheckbox = document.createElement("label");
+        rowCheckbox.className = "flex items-center gap-2";
+        container.appendChild(rowCheckbox);
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.id = "hidePastCheckbox";
+        cb.checked = !!hidePast;
+        rowCheckbox.appendChild(cb);
+
+        const cbText = document.createElement("span");
+        cbText.className = "text-sm";
+        cbText.textContent = "Masquer les cartes dont la date est passée";
+        rowCheckbox.appendChild(cbText);
+
+        // Aide
+        const help = document.createElement("p");
+        help.className = "text-xs text-slate-500";
+        help.textContent =
+          "Si aucun champ n'est choisi, aucune carte n'est filtrée.";
+        container.appendChild(help);
+
+        // Listeners
+        selectEl.addEventListener("change", async () => {
+          await setDateFilterField(selectEl.value);
+          const selectedSource = select.value;
+          const selectedColumn = catchColumn(choices, selectedSource);
+          if (!selectedColumn) return;
+          rerenderKanban(
+            selectedColumn,
+            applyDateFilter(lastRecords),
+            selectedSource
+          );
+        });
+
+        cb.addEventListener("change", async () => {
+          await setHidePastFlag(cb.checked);
+          const selectedSource = select.value;
+          const selectedColumn = catchColumn(choices, selectedSource);
+          if (!selectedColumn) return;
+          rerenderKanban(
+            selectedColumn,
+            applyDateFilter(lastRecords),
+            selectedSource
+          );
+        });
+      }
+
+      // bouton d’affichage/masquage du panneau
+      const dateClass = datePanel.classList;
+      dateBtn?.addEventListener("click", () => {
+        const isHidden = dateClass.toggle("hidden");
+        dateBtn.textContent = isHidden ? "Filtre date" : "Masquer filtre date";
+      });
+
+      // Retourne le tableau filtré selon le champ et le toggle "masquer le passé".
+      function applyDateFilter(records) {
+        const fld = getDateFilterField();
+        const hidePast = getHidePastFlag();
+        if (!hidePast || !fld) return records || [];
+
+        const now = new Date();
+        return (records || []).filter((rec) => {
+          const raw = rec[fld];
+          const d = toDate(raw);
+          // si pas de date ou date invalide -> on conserve
+          if (!d) return true;
+          // on masque seulement si la date est strictement antérieure à aujourd'hui
+          return !isPastDate(d, now);
+        });
+      }
+
       // =====================================================================
       // 11) CONSTRUCTION DU KANBAN & DRAG/DROP
       // =====================================================================
@@ -1384,6 +1582,7 @@
         if (!selectedColumn) return;
         renderVisibilityUI(selectedColumn);
         renderFieldsUI(selectedColumn);
+        renderDateFilterUI();
         rerenderKanban(selectedColumn, lastRecords, selectedSource);
       });
 
