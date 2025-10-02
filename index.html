@@ -1,7 +1,9 @@
+<!DOCTYPE html>
 <html>
   <head>
+    <meta charset="utf-8" />
+    <title>Kanban</title>
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
-
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="w-full">
@@ -27,7 +29,6 @@
         >
           Afficher les colonnes
         </button>
-
         <button
           id="fieldsBtn"
           class="text-sm p-3 border-none bg-white rounded dark:bg-slate-500 shadow-md hover:bg-emerald-500 hover:text-white"
@@ -35,6 +36,7 @@
           Afficher les champs
         </button>
       </div>
+
       <div class="flex w-full gap-4 items-start">
         <div
           id="visPanel"
@@ -51,19 +53,26 @@
         class="text-xs w-full items-stretch justify-between flex gap-2"
       ></div>
     </div>
+
     <script>
+      // =====================================================================
+      // 0) BOOTSTRAP GRIST & ELEMENTS DOM
+      // =====================================================================
+      // Prépare l'API plugin et autorise la sélection par curseur depuis Grist
       grist.ready({ requiredAccess: "full", allowSelectBy: true });
 
-      // Déclaration des variables
+      // Raccourcis vers les éléments de l'interface
       const select = document.getElementById("sortBy");
       const wrapper = document.getElementById("wrapper");
       const visBtn = document.getElementById("visBtn");
       const visPanel = document.getElementById("visPanel");
       const fieldsBtn = document.getElementById("fieldsBtn");
       const fieldsPanel = document.getElementById("fieldsPanel");
+
+      // Constante d'étiquette pour la colonne "vide"
       const empty = "(vide)";
 
-      // État global
+      // Etat global en mémoire (mis à jour au fil des callbacks Grist)
       let allColsMeta = [];
       let lastRecords = [];
       let choices = [];
@@ -71,7 +80,10 @@
       let widgetOptions = {};
       let choicesInitialized = false;
 
-      // Utils
+      // =====================================================================
+      // 1) HELPERS GÉNÉRIQUES (string, JSON, tests, normalisation)
+      // =====================================================================
+      // Supprime les accents pour comparer des libellés de manière robuste
       function strNoAccent(str) {
         return (str ?? "")
           .toString()
@@ -79,6 +91,7 @@
           .replace(/[\u0300-\u036f]/g, "");
       }
 
+      // Normalise une clé (trim + sans accents + lowercase)
       function norm(s) {
         return (s ?? "")
           .toString()
@@ -88,6 +101,7 @@
           .toLowerCase();
       }
 
+      // Parse JSON sûr (retourne null si invalide)
       function safeParse(maybeJson) {
         if (!maybeJson) return null;
         if (typeof maybeJson === "object") return maybeJson;
@@ -101,44 +115,51 @@
         return null;
       }
 
+      // Détermine si une valeur est « vide » au sens d'affichage
       function isEmptyValue(v) {
         if (Array.isArray(v)) return v.length === 0;
         return v === null || v === undefined || v === "";
       }
 
+      // =====================================================================
+      // 2) CLÉS D'OPTIONS PERSISTÉES (widget options)
+      // =====================================================================
+      // Clé unique pour mémoriser la source de colonnes (une par vue)
       function sourceKey(source) {
-        return "kanban:source"; // 1 seule source mémorisée par vue
+        return "kanban:source";
       }
-
+      // Clé pour mémoriser les colonnes (headers) cachées d'une source
       function hiddenKey(colId) {
         return `kanban:hidden:${colId}`;
       }
-
+      // Clé pour mémoriser les champs masqués dans les cartes, scoped table+source
       function hiddenFieldsKey(tableId, sourceColId) {
         return `kanban:hiddenFields:${tableId}:${sourceColId}`;
       }
 
+      // =====================================================================
+      // 3) MÉTA-DONNÉES COLONNES & TYPES (Grist)
+      // =====================================================================
+      // Récupère une métadonnée de colonne par id/colId
       function getColMetaById(colId) {
         return allColsMeta.find((c) => (c.colId || c.id) === colId) || null;
       }
 
+      // Extrait/parse les widgetOptions d'une colonne
       function parseWidgetOptions(meta) {
         return safeParse(meta?.widgetOptions) || null;
       }
+
+      // Déduit un type "fonctionnel" pour le rendu (Choice, Number, ...)
       function getFieldType(meta) {
         if (!meta) return "Unknown";
         const raw = String(meta.type || "").toLowerCase();
         const wo = parseWidgetOptions(meta);
-
-        // Widget explicite
         const w = (wo?.widget || "").toLowerCase();
         if (w === "choice") return "Choice";
         if (w === "choicelist") return "ChoiceList";
-
-        // Type brut Grist
         if (raw.startsWith("reflist")) return "RefList";
         if (raw.startsWith("ref")) return "Ref";
-
         if (raw.includes("choice"))
           return raw.includes("list") ? "ChoiceList" : "Choice";
         if (raw.includes("date") && raw.includes("time")) return "DateTime";
@@ -148,15 +169,15 @@
         if (raw.includes("num") || raw.includes("int") || raw.includes("float"))
           return "Number";
         if (raw.includes("text") || raw === "") return "Text";
-
-        // fallback
         return meta.type || "Text";
       }
 
+      // =====================================================================
+      // 4) COULEURS & CHOIX (utils couleurs pour Choice/ChoiceList)
+      // =====================================================================
       function normalizeHex(c) {
         if (!c || typeof c !== "string") return null;
         let v = c.trim();
-        // certaines versions stockent "ffffff" (sans #) ou "FFFFFFFF"
         if (!v.startsWith("#") && /^[0-9a-fA-F]{6,8}$/.test(v)) v = "#" + v;
         return v;
       }
@@ -169,12 +190,10 @@
           null;
         return normalizeHex(c);
       }
-
       function pickFg(opt) {
         const c = opt?.textColor ?? opt?.textcolor ?? null;
         return normalizeHex(c);
       }
-
       function safeParseWidget(meta) {
         const raw = meta?.widgetOptions;
         if (!raw) return null;
@@ -185,19 +204,16 @@
           return null;
         }
       }
-
       function buildChoiceColorMap(meta) {
         const wo = safeParse(meta?.widgetOptions) || {};
         const map = new Map();
-
         const push = (label, opt) => {
           const L = (label ?? "").toString().trim();
           if (!L) return;
           const entry = { bg: pickBg(opt), fg: pickFg(opt) };
-          map.set(L, entry); // clé brute
-          map.set(norm(L), entry); // clé normalisée (sans accents/casse)
+          map.set(L, entry);
+          map.set(norm(L), entry);
         };
-
         if (Array.isArray(wo.choices)) {
           for (const c of wo.choices) push(c?.label ?? c?.value, c);
         } else if (wo.choicesById && typeof wo.choicesById === "object") {
@@ -206,11 +222,8 @@
             push(c?.label ?? c?.value, c);
           }
         }
-
         return map;
       }
-
-      // Palette de secours si pas de couleur dans le meta
       const FALLBACK_COLORS = [
         "#10B981",
         "#3B82F6",
@@ -221,7 +234,6 @@
         "#14B8A6",
         "#F97316",
       ];
-
       function hashStringToIndex(str, mod) {
         let h = 0;
         for (let i = 0; i < str.length; i++) {
@@ -229,7 +241,6 @@
         }
         return Math.abs(h) % mod;
       }
-
       function mapFromChoiceOptions(wo) {
         const m = new Map();
         const co =
@@ -241,13 +252,11 @@
             if (!label) continue;
             m.set(label, entry);
             m.set(norm(label), entry);
-            m.set(norm(key), entry); // au cas où la clé != label
+            m.set(norm(key), entry);
           }
         }
         return m;
       }
-
-      // Construit une map label -> {bg,fg} depuis choices / choicesById
       function mapFromChoicesArrays(wo) {
         const m = new Map();
         const push = (c) => {
@@ -265,80 +274,64 @@
         }
         return m;
       }
-
-      // Cache fusionné par colonne (choiceOptions > choices > fallback)
       const choiceColorCaches = new Map();
       function getColorCache(meta) {
         const colKey = (meta?.colId || meta?.id || "??").toString();
         if (!choiceColorCaches.has(colKey)) {
           const wo = safeParseWidget(meta) || {};
           const cache = new Map();
-          // ordre d'écrasement: d'abord arrays, puis choiceOptions (prioritaire)
           for (const [k, v] of mapFromChoicesArrays(wo)) cache.set(k, v);
           for (const [k, v] of mapFromChoiceOptions(wo)) cache.set(k, v);
           choiceColorCaches.set(colKey, cache);
         }
         return choiceColorCaches.get(colKey);
       }
-
       function colorForLabel(meta, label) {
         const L = String(label ?? "");
         const cache = getColorCache(meta);
         const hit = cache.get(L) || cache.get(norm(L));
         if (hit && (hit.bg || hit.fg)) return hit;
-        // fallback déterministe
         const idx = hashStringToIndex(L, FALLBACK_COLORS.length);
         return { bg: FALLBACK_COLORS[idx], fg: "#111827" };
       }
 
-      // Essaie d'identifier le type "visuel" appliqué à la colonne (percent, currency, etc.)
+      // =====================================================================
+      // 5) DÉTECTION STYLE D'AFFICHAGE (nombres, dates, etc.)
+      // =====================================================================
       function getDisplayStyle(meta) {
         const wo = parseWidgetOptions(meta) || {};
         const rawType = String(meta?.type || "").toLowerCase();
-
-        // Récupération de champs candidats fréquents
         const widget = (wo.widget || "").toLowerCase();
         const numMode = (wo.numMode || "").toLowerCase();
         const numFormat = wo.numFormat || wo.format || "";
         const decimals = wo.decimals ?? wo.precision ?? wo.fracDigits ?? null;
         const currency = wo.currency || wo.currencyCode || wo.symbol || null;
         const unit = wo.unit || wo.suffix || null;
-
         const dateFormat = wo.dateFormat || null;
         const timeFormat = wo.timeFormat || null;
         const align = wo.align || wo.alignment || null;
-
-        //Number
         const isNumberLike =
           rawType.includes("num") ||
           rawType.includes("number") ||
           rawType.includes("int") ||
           rawType.includes("float") ||
           rawType === "numeric";
-
-        //Percent
         const looksPercent =
           numMode === "percent" ||
           widget === "percent" ||
           /%/.test(String(numFormat)) ||
           unit === "%" ||
           (isNumberLike && wo.percent === true);
-
-        //Currency
         const looksCurrency =
           numMode === "currency" ||
           widget === "currency" ||
           currency != null ||
           /[$€£¥]/.test(String(numFormat));
-
-        //Date
         const isDateTime = rawType.includes("datetime");
         const isDate = rawType.includes("date") && !isDateTime;
         const isTime = rawType.includes("time") && !isDateTime;
-
-        // Construction d'un objet
         if (isNumberLike) {
-          if (looksPercent) {
+          if (looksPercent)
             return {
               kind: "percent",
               decimals: decimals ?? 0,
@@ -346,8 +339,7 @@
               unit: unit || "%",
               align: align || "right",
             };
-          }
-          if (looksCurrency) {
+          if (looksCurrency)
             return {
               kind: "currency",
               currency: currency || guessCurrencyFromFormat(numFormat) || "EUR",
@@ -355,7 +347,6 @@
               format: numFormat || null,
               align: align || "right",
             };
-          }
           return {
             kind: "number",
             decimals: decimals ?? guessDecimalsFromFormat(numFormat),
@@ -364,89 +355,31 @@
             unit: unit || null,
           };
         }
-
-        if (isDateTime) {
+        if (isDateTime)
           return {
             kind: "datetime",
             dateFormat: dateFormat || guessDateFormat(dateFormat),
             timeFormat: timeFormat || guessTimeFormat(timeFormat),
             align: align || "left",
           };
-        }
-        if (isDate) {
+        if (isDate)
           return {
             kind: "date",
             dateFormat: dateFormat || guessDateFormat(dateFormat),
             align: align || "left",
           };
-        }
-        if (isTime) {
+        if (isTime)
           return {
             kind: "time",
             timeFormat: timeFormat || guessTimeFormat(numFormat),
             align: align || "left",
           };
-        }
-
-        // Choice / ChoiceList / Ref / Text / Attachments...
         return {
           kind: "default",
           align: align || (rawType.includes("text") ? "left" : "left"),
         };
       }
-
-      // Helpers
-
-      // Helpers génériques
-      function isNil(v) {
-        return v === null || v === undefined;
-      }
-
-      // --- Helpers robustes pour Ref / RefList -----------------
-      function refIdFromAny(v) {
-        if (isNil(v)) return null;
-        if (typeof v === "number" || typeof v === "string") return v;
-        if (typeof v === "object") {
-          if ("id" in v) return v.id;
-          if ("rowId" in v) return v.rowId;
-          if ("_rowId" in v) return v._rowId;
-        }
-        return null;
-      }
-
-      function refListIdsFromAny(arr) {
-        if (!Array.isArray(arr)) return [];
-        return arr.map(refIdFromAny).filter((x) => !isNil(x));
-      }
-
-      // --- Rendu Référence (Ref) --------------------------------
-      function renderRef(raw) {
-        const id = refIdFromAny(raw);
-        const span = document.createElement("span");
-        span.className =
-          "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-slate-200";
-        span.textContent = isNil(id) ? "" : `#${id}`;
-        return span;
-      }
-
-      // --- Rendu Références multiples (RefList) -----------------
-      function renderRefList(raw) {
-        const ids = refListIdsFromAny(raw);
-        const wrapper = document.createElement("div");
-        if (ids.length > 0) {
-          for (const id of ids) {
-            const span = document.createElement("span");
-            span.className =
-              "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-slate-200";
-            span.textContent = `#${id}`;
-            wrapper.appendChild(span);
-          }
-        }
-        // const span = document.createElement("span");
-        // span.textContent = ids.length ? ids.map((n) => `#${n}`).join(", ") : "";
-        return wrapper;
-      }
-
+      // Inférences simples de formatage
       function guessCurrencyFromFormat(fmt) {
         if (!fmt) return null;
         if (fmt.includes("€")) return "EUR";
@@ -462,7 +395,6 @@
       }
       function guessDateFormat(fmt) {
         if (!fmt) return null;
-        // Heuristique simple sur tokens classiques
         if (/YYYY.*MM.*DD/i.test(fmt)) return "YYYY-MM-DD";
         if (/DD.*MM.*YYYY/i.test(fmt)) return "DD/MM/YYYY";
         if (/MM.*DD.*YYYY/i.test(fmt)) return "MM/DD/YYYY";
@@ -476,6 +408,7 @@
         return null;
       }
 
+      // Contexte d'internationalisation issu de l'URL / navigateur
       const DOC_ENV = (() => {
         const p = new URLSearchParams(location.search);
         const tz =
@@ -489,40 +422,29 @@
           language: p.get("language") || navigator.language || "fr-FR",
         };
       })();
-
       function intlOptionsFromGristPatterns(
         datePattern = "",
         timePattern = "",
         { timeZone } = {}
       ) {
         const o = { timeZone };
-
-        // ---- DATE ---- (détection par présence de token, pas égalité)
         if (datePattern) {
-          // Year
           if (datePattern.includes("YYYY")) o.year = "numeric";
           else if (datePattern.includes("YY")) o.year = "2-digit";
-
-          // Month
           if (datePattern.includes("MMMM")) o.month = "long";
           else if (datePattern.includes("MMM")) o.month = "short";
           else if (datePattern.includes("MM")) o.month = "2-digit";
           else if (datePattern.includes("M")) o.month = "numeric";
-
-          // Day
           if (datePattern.includes("DD")) o.day = "2-digit";
           else if (datePattern.includes("Do") || datePattern.includes("D"))
             o.day = "numeric";
         }
-
-        // ---- TIME ----
         if (timePattern) {
           const hasSeconds = timePattern.includes("ss");
           const hasMinutes =
             timePattern.includes("mm") || timePattern.includes("m");
-          const is12h = timePattern.includes("h"); // 'h' → 12h
-          const is24h = timePattern.includes("HH"); // 'HH' → 24h
-
+          const is12h = timePattern.includes("h");
+          const is24h = timePattern.includes("HH");
           if (is12h) {
             o.hour = timePattern.includes("hh") ? "2-digit" : "numeric";
             o.hour12 = true;
@@ -531,29 +453,25 @@
             o.hour12 = false;
             o.hourCycle = "h23";
           }
-
           if (hasMinutes)
             o.minute = timePattern.includes("mm") ? "2-digit" : "numeric";
           if (hasSeconds) o.second = "2-digit";
-
           if (timePattern.includes(" z")) o.timeZoneName = "short";
         }
-
         return o;
       }
 
-      // Getter et Setter pour les options persistées
-
+      // =====================================================================
+      // 6) PERSISTENCE D'OPTIONS (lecture/écriture)
+      // =====================================================================
       function getStoredSource(source) {
         const v = widgetOptions?.[sourceKey()] || "";
         return v;
       }
-
       function getHiddenFor(colId) {
         const v = widgetOptions?.[hiddenKey(colId)];
-        return Array.isArray(v) ? v : []; // on retourne toujours un tableau
+        return Array.isArray(v) ? v : [];
       }
-
       function getHiddenFields(tableId, sourceColId) {
         const v = widgetOptions?.[hiddenFieldsKey(tableId, sourceColId)];
         return Array.isArray(v) ? v : [];
@@ -565,7 +483,6 @@
           arr
         );
       }
-
       function hiddenFieldsModeKey(tableId, sourceColId) {
         return `kanban:hiddenFieldsMode:${tableId}:${sourceColId}`;
       }
@@ -580,7 +497,17 @@
         );
         widgetOptions[hiddenFieldsModeKey(tableId, sourceColId)] = mode;
       }
+      async function setStoredSource(source) {
+        await grist.widgetApi.setOption(sourceKey(), source);
+      }
+      async function setHiddenFor(colId, arr) {
+        widgetOptions[hiddenKey(colId)] = arr;
+        await grist.widgetApi.setOption(hiddenKey(colId), arr);
+      }
 
+      // =====================================================================
+      // 7) INDEX MÉTA & RÉCUPÉRATION DES COLONNES
+      // =====================================================================
       let metaIndex = new Map();
       function rebuildMetaIndex() {
         metaIndex.clear();
@@ -595,77 +522,13 @@
         return metaIndex.get(String(key)) || null;
       }
 
-      async function initChoicesOnce() {
-        if (choicesInitialized) return;
-        const cols = await getAllColumns();
-
-        allColsMeta = cols;
-        rebuildMetaIndex();
-
-        while (select.options.length > 1) select.remove(1);
-        choices = [];
-
-        for (const col of cols) {
-          if (isChoiceLike(col)) {
-            const opt = document.createElement("option");
-            opt.value = col.colId || col.id || "";
-            opt.textContent = col.label || col.colId || "(?)";
-            select.appendChild(opt);
-            choices.push(col);
-          }
-        }
-        // Restaure la source mémorisée (si valide)
-        const stored = getStoredSource();
-        if (stored) {
-          // si l'option existe encore dans la liste, on la sélectionne
-          const has = Array.from(select.options).some(
-            (o) => o.value === stored
-          );
-          if (has) {
-            select.value = stored;
-          }
-        }
-
-        // Si rien n’est sélectionné (ou stored invalide), on prend la 1ère option valide
-        if (select.value === "none" && select.options.length > 1) {
-          select.value = select.options[1].value;
-          await setStoredSource(select.value);
-        }
-
-        choicesInitialized = true;
-        // debugDumpColumnFormats();
-      }
-
-      async function setStoredSource(source) {
-        await grist.widgetApi.setOption(sourceKey(), source); // persiste dans le doc
-      }
-
-      async function setHiddenFor(colId, arr) {
-        widgetOptions[hiddenKey(colId)] = arr; // met à jour le cache local
-        await grist.widgetApi.setOption(hiddenKey(colId), arr);
-      }
-
-      // Initialisation de l'ID de la table actuelle
-      async function initCurrentTableId() {
-        if (currentTableId) return currentTableId;
-        const table = await grist.getTable();
-        currentTableId = await table._platform.getTableId();
-        return currentTableId;
-      }
-
-      // Récupère les options persistées
-      grist.onOptions((opts) => {
-        widgetOptions = opts || {};
-      });
-
-      // Fonction pour récupérer toutes les colonnes de la table actuelle
+      // Renvoie les métadonnées de toutes les colonnes de la table active
       async function getAllColumns() {
         const table = await grist.getTable();
         const tableId = await table._platform.getTableId();
         const tables = await grist.docApi.fetchTable("_grist_Tables");
         const columns = await grist.docApi.fetchTable("_grist_Tables_column");
         const fields = Object.keys(columns);
-
         const tableColumns = [];
         if (!tableId) {
           console.log("Aucun id de table trouvé");
@@ -679,7 +542,6 @@
             );
           }
         }
-
         return tableColumns;
       }
       function debugDumpColumnFormats() {
@@ -692,20 +554,24 @@
         console.groupEnd();
       }
 
-      // Fonction pour reconstruire la liste des en-têtes visibles en fonction des colonnes masquées
-
-      function buildVisibleHeaders(colMeta, allHeaders) {
-        const colId = colMeta.colId || colMeta.id;
-        const hidden = new Set(getHiddenFor(colId).map(norm));
-        return allHeaders.filter((h) => !hidden.has(norm(h.value)));
+      // Id de table courant, récupéré une fois
+      async function initCurrentTableId() {
+        if (currentTableId) return currentTableId;
+        const table = await grist.getTable();
+        currentTableId = await table._platform.getTableId();
+        return currentTableId;
       }
-      /* ---------------------------------------------
-                           Helpers pour reconnaître Choice/ChoiceList
-                           et extraire l'ordre des 'choices' depuis widgetOptions
-                           --------------------------------------------- */
+
+      // Grist -> options du widget
+      grist.onOptions((opts) => {
+        widgetOptions = opts || {};
+      });
+
+      // =====================================================================
+      // 8) HELPERS CHOICES (détection Choice/ChoiceList, extraction ordre)
+      // =====================================================================
       function isChoiceLike(colMeta) {
         const wo = safeParse(colMeta?.widgetOptions);
-        // Certaines versions stockent le widget +/ou les choices
         return (
           wo?.widget === "Choice" ||
           wo?.widget === "ChoiceList" ||
@@ -716,10 +582,7 @@
       function getChoicesFromMeta(colMeta) {
         const wo = safeParse(colMeta?.widgetOptions);
         if (!wo) return [];
-
         let result = [];
-
-        // 1) Si wo.choices est un tableau
         if (wo && Array.isArray(wo.choices)) {
           for (const c of wo.choices) {
             let label;
@@ -734,8 +597,6 @@
           }
           return result;
         }
-
-        // 2) Sinon, si wo.choicesById est un objet
         if (wo && typeof wo.choicesById === "object") {
           for (const key of Object.keys(wo.choicesById)) {
             const c = wo.choicesById[key];
@@ -744,54 +605,13 @@
           }
           return result;
         }
-
-        // 3) Sinon, rien
         return result;
       }
 
-      // Initialisation du menu déroulant avec les colonnes de type "Choice"
-
-      (async () => {
-        try {
-          const cols = await getAllColumns();
-          allColsMeta = cols;
-
-          for (const col of cols) {
-            if (isChoiceLike(col)) {
-              const option = document.createElement("option");
-              option.classList.add(
-                "text-sm",
-
-                "select-none",
-                "focus:bg-emerald-500",
-                "focus:text-white"
-              );
-
-              option.value = col.colId || col.id || "";
-              option.textContent = col.label || col.colId || "(?)";
-              select.appendChild(option);
-
-              choices.push(col);
-            }
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      })();
-
-      // Marque une carte comme "draggable" et envoie les infos utiles lors du drag
-      function makeCardDraggable(cardEl, rowId, fromHeaderValue, sourceColId) {
-        cardEl.draggable = true; // indispensable pour activer le drag natif
-        cardEl.addEventListener("dragstart", (e) => {
-          // On stocke dans le dataTransfer les infos utiles pour l'update au drop
-          e.dataTransfer.setData("rowId", String(rowId));
-          e.dataTransfer.setData("fromHeader", fromHeaderValue); // valeur d'origine (ex: "À faire")
-          e.dataTransfer.setData("sourceColId", sourceColId); // nom du champ (ex: "Statut")
-          e.dataTransfer.effectAllowed = "move";
-        });
-      }
-
-      // Fonction pour rendre les en-têtes basés sur les valeurs uniques de la colonne sélectionnée
+      // =====================================================================
+      // 9) RENDU DES VALEURS (HTML) & COMPOSANTS D'UI
+      // =====================================================================
+      // Construit les en-têtes (y compris la colonne « (vide) »)
       function renderHeader(source, records) {
         const order = getChoicesFromMeta(source);
         wrapper.innerHTML = "";
@@ -799,14 +619,58 @@
         headers.unshift({ index: 0, value: empty });
         return headers;
       }
+      // Filtre la liste d'en-têtes selon les colonnes masquées
+      function buildVisibleHeaders(colMeta, allHeaders) {
+        const colId = colMeta.colId || colMeta.id;
+        const hidden = new Set(getHiddenFor(colId).map(norm));
+        return allHeaders.filter((h) => !hidden.has(norm(h.value)));
+      }
+
+      // Petits helpers de rendu spécifiques
+      function isNil(v) {
+        return v === null || v === undefined;
+      }
+      function refIdFromAny(v) {
+        if (isNil(v)) return null;
+        if (typeof v === "number" || typeof v === "string") return v;
+        if (typeof v === "object") {
+          if ("id" in v) return v.id;
+          if ("rowId" in v) return v.rowId;
+          if ("_rowId" in v) return v._rowId;
+        }
+        return null;
+      }
+      function refListIdsFromAny(arr) {
+        if (!Array.isArray(arr)) return [];
+        return arr.map(refIdFromAny).filter((x) => !isNil(x));
+      }
+      function renderRef(raw) {
+        const id = refIdFromAny(raw);
+        const span = document.createElement("span");
+        span.className =
+          "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-slate-200";
+        span.textContent = isNil(id) ? "" : `#${id}`;
+        return span;
+      }
+      function renderRefList(raw) {
+        const ids = refListIdsFromAny(raw);
+        const wrapper = document.createElement("div");
+        if (ids.length > 0) {
+          for (const id of ids) {
+            const span = document.createElement("span");
+            span.className =
+              "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded bg-slate-200";
+            span.textContent = `#${id}`;
+            wrapper.appendChild(span);
+          }
+        }
+        return wrapper;
+      }
 
       function formatValueForDisplay(value, style) {
         if (value == null || value === "") return "";
-
-        // Numbers + variations
         if (style?.kind === "percent") {
           const decimals = style.decimals ?? 0;
-          // si valeur <= 1 et >= -1, traite comme ratio → x100
           const n =
             Math.abs(Number(value)) <= 1 ? Number(value) * 100 : Number(value);
           return `${n.toLocaleString(DOC_ENV.culture, {
@@ -814,7 +678,6 @@
             maximumFractionDigits: decimals,
           })} %`;
         }
-
         if (style?.kind === "currency") {
           const decimals = style.decimals ?? 2;
           const ccy = style.currency || DOC_ENV.currency || "EUR";
@@ -825,7 +688,6 @@
             maximumFractionDigits: decimals,
           });
         }
-
         if (style?.kind === "number") {
           const decimals = style.decimals ?? 0;
           return Number(value).toLocaleString(DOC_ENV.culture, {
@@ -833,19 +695,16 @@
             maximumFractionDigits: decimals,
           });
         }
-
         return String(value);
       }
       function renderDate(value) {
         if (!value) return "";
-
         return d.toLocaleDateString(DOC_ENV.culture, {
           year: "numeric",
           month: "2-digit",
           day: "2-digit",
         });
       }
-
       function renderBool(value) {
         const wrap = document.createElement("span");
         wrap.className = "inline-flex items-center gap-1";
@@ -867,7 +726,6 @@
           );
           icon.textContent = "✕";
         } else {
-          // null / vide
           icon.classList.add(
             "bg-transparent",
             "border-slate-300",
@@ -878,24 +736,19 @@
         wrap.appendChild(icon);
         return wrap;
       }
-
       function renderChoice(meta, raw) {
         const label = String(raw ?? "").trim();
         const span = document.createElement("span");
         span.className = "inline-flex items-center gap-1";
-
         const dot = document.createElement("span");
         dot.className = "inline-block text-xs px-2 py-0.5 mr-1 mb-1 rounded";
-
         const { bg, fg } = colorForLabel(meta, label);
         if (bg) dot.style.backgroundColor = bg;
         if (fg) span.style.color = fg;
-
         span.appendChild(dot);
         dot.appendChild(document.createTextNode(label));
         return span;
       }
-
       function renderChoiceList(meta, arr) {
         const frag = document.createElement("div");
         frag.className = "flex flex-wrap";
@@ -910,36 +763,15 @@
         });
         return frag;
       }
-
-      /**
-       * Retourne un élément DOM formaté selon le type.
-       * - Utilise ton formatValueForDisplay pour Number/Currency/Percent.
-       * - Aligne à droite les numériques.
-       */
+      // Rendu générique d'un champ selon son type (retourne un élément DOM)
       function renderFieldValue(meta, fieldType, style, raw) {
-        // Bool -> coche
-        if (fieldType === "Bool") {
-          return renderBool(raw);
-        }
-
-        // ChoiceList -> chips colorées
-        if (fieldType === "ChoiceList" && Array.isArray(raw)) {
+        if (fieldType === "Bool") return renderBool(raw);
+        if (fieldType === "ChoiceList" && Array.isArray(raw))
           return renderChoiceList(meta, raw);
-        }
-
-        // Choice -> pastille + libellé
-        if (fieldType === "Choice" && typeof raw === "string") {
+        if (fieldType === "Choice" && typeof raw === "string")
           return renderChoice(meta, raw);
-        }
-
-        // Ref / RefList (simple: affiche IDs)
-        if (fieldType === "Ref") {
-          return renderRef(raw);
-        }
-        if (fieldType === "RefList") {
-          return renderRefList(raw);
-        }
-        // Number / Currency / Percent -> texte formaté + alignement
+        if (fieldType === "Ref") return renderRef(raw);
+        if (fieldType === "RefList") return renderRefList(raw);
         if (
           style?.kind === "number" ||
           style?.kind === "currency" ||
@@ -951,84 +783,69 @@
             p.classList.add("text-right", "self-stretch");
           return p;
         }
-
-        // Date/DateTime/Time
-
         if (
           style?.kind === "date" ||
           style?.kind === "datetime" ||
           style?.kind === "time"
         ) {
           const p = document.createElement("p");
-
-          // 1) Construire un objet Date valide
-          const dateObj = new Date(raw); // si besoin je peux te donner un toDateObj() plus robuste
-
-          // 2) Récupérer locale & fuseau depuis DOC_ENV
+          const dateObj = new Date(raw);
           const locale = DOC_ENV.culture || navigator.language || "fr-FR";
           const tz =
             DOC_ENV.timeZone ||
             Intl.DateTimeFormat().resolvedOptions().timeZone ||
             "Europe/Paris";
-
-          // 3) Déterminer les options Intl selon les patterns Grist
-          const datePattern = style?.dateFormat || ""; // ex: "YYYY-MM-DD"
-          const timePattern = style?.timeFormat || ""; // ex: "HH:mm:ss"
+          const datePattern = style?.dateFormat || "";
+          const timePattern = style?.timeFormat || "";
           const options = intlOptionsFromGristPatterns(
             datePattern,
             timePattern,
             { timeZone: tz }
           );
-
-          // 4) Formatter
           p.textContent = new Intl.DateTimeFormat(locale, options).format(
             dateObj
           );
-
           if (style?.align === "right")
             p.classList.add("text-right", "self-stretch");
           return p;
         }
-
         const p = document.createElement("p");
-
         if (raw !== null && raw !== undefined) {
           p.textContent =
             typeof raw === "object" ? JSON.stringify(raw) : String(raw);
         } else {
           p.textContent = "—";
         }
-
         p.classList.add("text-slate-800", "w-full");
         return p;
       }
 
-      // Fonction pour afficher le panneau de gestion de la visibilité des colonnes
+      // =====================================================================
+      // 10) PANNEAUX D'OPTIONS (headers/champs visibles)
+      // =====================================================================
       function renderVisibilityUI(colMeta) {
         const colId = colMeta.colId || colMeta.id;
-        const all = [empty, ...getChoicesFromMeta(colMeta)]; // toutes les colonnes possibles
+        const all = [empty, ...getChoicesFromMeta(colMeta)];
         const hidden = new Set(getHiddenFor(colId).map(norm));
-
         visPanel.innerHTML =
           "<div class='font-medium mb-2 text-sm font-bold'>Colonnes :</div>";
         const list = document.createElement("div");
         list.className = "grid grid-cols-2 gap-1 text-sm";
         visPanel.appendChild(list);
-
         for (const label of all) {
           const row = document.createElement("label");
           row.className = "flex items-center gap-2  text-sm";
           const cb = document.createElement("input");
           cb.type = "checkbox";
-          cb.checked = !hidden.has(norm(label)); // coché = visible
+          cb.checked = !hidden.has(norm(label));
           cb.addEventListener("change", async () => {
             const cur = new Set(getHiddenFor(colId).map(norm));
             const key = norm(label);
             if (cb.checked) cur.delete(key);
             else cur.add(key);
             await setHiddenFor(colId, Array.from(cur));
-            rerenderKanban(colMeta, lastRecords, colId); // réaffiche/récache immédiatement
-            renderVisibilityUI(colMeta); // refresh le panneau
+            rerenderKanban(colMeta, lastRecords, colId);
+            renderVisibilityUI(colMeta);
           });
           const span = document.createElement("span");
           span.textContent = label;
@@ -1037,7 +854,6 @@
           list.appendChild(row);
         }
       }
-
       const visClass = visPanel.classList;
       visBtn.addEventListener("click", () => {
         const isHidden = visClass.toggle("hidden");
@@ -1045,20 +861,18 @@
           isHidden ? "Afficher les colonnes" : "Masquer les colonnes"
         }`;
       });
+
+      // Ajout programmatique d'une option de Choice/ChoiceList dans la colonne source
       async function addChoiceToSourceColumn(sourceColId, newLabel) {
         newLabel = String(newLabel || "").trim();
         if (!newLabel) return;
-
         const meta = allColsMeta.find((c) => (c.colId || c.id) === sourceColId);
         if (!meta) throw new Error("Colonne source introuvable");
         const curWO = safeParse(meta.widgetOptions) || {};
         const wo = JSON.parse(JSON.stringify(curWO));
-        // Détecter le mode existant
         const hasChoicesArray = Array.isArray(wo.choices);
         const hasChoicesById =
           wo.choicesById && typeof wo.choicesById === "object";
-
-        // Helper: transformer un tableau hétérogène en tableau de chaînes
         const toStringArray = (arr) => {
           const out = [];
           for (const c of arr) {
@@ -1069,14 +883,10 @@
             ) {
               out.push(String(c.label ?? c.value));
             }
-            // tout le reste est ignoré pour éviter les objets non-string
           }
           return out;
         };
-
         if (hasChoicesById) {
-          // MODE RICHE: choicesById uniquement (pas de 'choices' tableau)
-          // 1) Vérifier existence
           const exists = Object.values(wo.choicesById).some(
             (c) => (c?.label ?? c?.value) === newLabel
           );
@@ -1084,20 +894,15 @@
             const key = "opt_" + Math.random().toString(36).slice(2, 9);
             wo.choicesById[key] = { label: newLabel, value: newLabel };
           }
-          // Nettoyage de sécurité: supprimer un éventuel 'choices' hétérogène
           if (hasChoicesArray) delete wo.choices;
         } else if (hasChoicesArray) {
-          // MODE SIMPLE: tableau de chaînes uniquement
           const normalized = toStringArray(wo.choices);
           if (!normalized.includes(newLabel)) normalized.push(newLabel);
           wo.choices = normalized;
         } else {
-          // AUCUN FORMAT: on part sur le format SIMPLE et propre
           wo.choices = [newLabel];
           delete wo.choicesById;
         }
-
-        // Écrire en base
         await grist.docApi.applyUserActions([
           [
             "UpdateRecord",
@@ -1106,11 +911,7 @@
             { widgetOptions: JSON.stringify(wo) },
           ],
         ]);
-
-        // Mettre à jour le cache local pour éviter tout flicker
         meta.widgetOptions = JSON.stringify(wo);
-
-        // Rafraîchir l’UI
         const selectedSource = select.value;
         const selectedColumn = catchColumn(choices, selectedSource);
         if (selectedColumn) {
@@ -1119,14 +920,12 @@
         }
       }
 
-      // Panneau de gestion des champs affichés dans les cartes
+      // Panneau de sélection des champs visibles dans les cards
       function renderFieldsUI(colMeta) {
         const tableCols = allColsMeta;
         const sourceColId = colMeta.colId || colMeta.id;
         const tableId = currentTableId;
         if (!tableId) return;
-
-        // champs éligibles
         const fieldMetas = tableCols.filter((c) => {
           const cid = c.colId || c.id || "";
           if (!cid) return false;
@@ -1136,46 +935,35 @@
           if (cid === sourceColId) return false;
           return true;
         });
-
         const allCids = fieldMetas.map((f) => f.colId || f.id);
         const defaultVisible = allCids.slice(0, 3);
-
-        // état persistant actuel
-        const mode = getHiddenFieldsMode(tableId, sourceColId); // "default" | "all" | "custom"
+        const mode = getHiddenFieldsMode(tableId, sourceColId);
         const hiddenNow = new Set(
           getHiddenFields(tableId, sourceColId).map(norm)
         );
-
-        // construit VISIBLE selon le mode (sans rien changer)
         const buildVisibleSetFromMode = () => {
           if (mode === "all") {
             return new Set(allCids);
           } else if (mode === "default") {
             return new Set(defaultVisible);
           } else {
-            // custom
             return new Set(allCids.filter((c) => !hiddenNow.has(norm(c))));
           }
         };
-
         fieldsPanel.innerHTML =
           "<div class='font-medium mb-2 text-sm'>Champs :</div>";
-
-        // --- Master toggle ---
         const topRow = document.createElement("label");
         topRow.className = "flex items-center gap-2 mb-2 text-sm";
         const masterCb = document.createElement("input");
         masterCb.type = "checkbox";
-        masterCb.checked = mode === "all"; // UNIQUEMENT si mode === 'all'
+        masterCb.checked = mode === "all";
         masterCb.addEventListener("click", (e) => e.stopPropagation());
         masterCb.addEventListener("change", async (e) => {
           e.stopPropagation();
           if (masterCb.checked) {
-            // passe explicitement en 'all'
             await setHiddenFields(tableId, sourceColId, []);
             await setHiddenFieldsMode(tableId, sourceColId, "all");
           } else {
-            // revient en 'default' (3 premiers)
             await setHiddenFields(tableId, sourceColId, []);
             await setHiddenFieldsMode(tableId, sourceColId, "default");
           }
@@ -1190,37 +978,26 @@
         topRow.appendChild(masterCb);
         topRow.appendChild(masterSpan);
         fieldsPanel.appendChild(topRow);
-
-        // --- Liste des champs individuels ---
         const list = document.createElement("div");
         list.className = "grid grid-cols-2 gap-1 text-sm";
         fieldsPanel.appendChild(list);
-
-        // état d’affichage courant (pour cocher/décocher visuellement)
         const visibleSetNow = buildVisibleSetFromMode();
-
         for (const fm of fieldMetas) {
           const cid = fm.colId || fm.id;
           if (!cid || cid === "manualSort") continue;
-
           const row = document.createElement("label");
           row.className = "flex items-center gap-2 text-sm";
-
           const cb = document.createElement("input");
           cb.type = "checkbox";
           cb.checked = visibleSetNow.has(cid);
-
           cb.addEventListener("click", (e) => e.stopPropagation());
           cb.addEventListener("change", async (e) => {
             e.stopPropagation();
-
-            // Repars TOUJOURS de l'état réel AVANT le clic
             const curMode = getHiddenFieldsMode(tableId, sourceColId);
             const curHidden = new Set(
               getHiddenFields(tableId, sourceColId).map(norm)
             );
             let curVisible;
-
             if (curMode === "all") {
               curVisible = new Set(allCids);
             } else if (curMode === "default") {
@@ -1230,36 +1007,27 @@
                 allCids.filter((c) => !curHidden.has(norm(c)))
               );
             }
-
-            // Applique l’action utilisateur
             if (cb.checked) {
               curVisible.add(cid);
             } else {
               curVisible.delete(cid);
             }
-
-            // Persiste en 'custom' (NE PAS inférer 'all' si tout est visible)
             const newHidden = allCids.filter((c) => !curVisible.has(c));
             await setHiddenFields(tableId, sourceColId, newHidden);
             await setHiddenFieldsMode(tableId, sourceColId, "custom");
-
-            // Re-render
             const selectedColumn = catchColumn(choices, sourceColId);
             if (selectedColumn) {
               rerenderKanban(selectedColumn, lastRecords, sourceColId);
               renderFieldsUI(selectedColumn);
             }
           });
-
           const span = document.createElement("span");
           span.textContent = fm.label || cid;
-
           row.appendChild(cb);
           row.appendChild(span);
           list.appendChild(row);
         }
       }
-
       const fieldsClass = fieldsPanel.classList;
       fieldsBtn.addEventListener("click", () => {
         const isHidden = fieldsClass.toggle("hidden");
@@ -1268,16 +1036,25 @@
         }`;
       });
 
-      // Fonction pour créer les éléments d'en-tête dans le DOM
+      // =====================================================================
+      // 11) CONSTRUCTION DU KANBAN & DRAG/DROP
+      // =====================================================================
+      function makeCardDraggable(cardEl, rowId, fromHeaderValue, sourceColId) {
+        cardEl.draggable = true;
+        cardEl.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("rowId", String(rowId));
+          e.dataTransfer.setData("fromHeader", fromHeaderValue);
+          e.dataTransfer.setData("sourceColId", sourceColId);
+          e.dataTransfer.effectAllowed = "move";
+        });
+      }
       function createKanban(leadHeader, wrapper, records, source) {
         const sourceColId = source;
         wrapper.innerHTML = "";
-
         const tableId = currentTableId;
         const mode = getHiddenFieldsMode(tableId, sourceColId);
         const hiddenFields = getHiddenFields(tableId, sourceColId);
         const hiddenFieldSet = new Set(hiddenFields.map(norm));
-        // const isDefault = hiddenFields.length === 0;
         const wrapperAddColumn = document.createElement("div");
         wrapperAddColumn.classList.add(
           "flex",
@@ -1299,12 +1076,9 @@
           "text-xl",
           "font-bold",
           "leading-none",
-          // "cursor-pointer",
           "w-12",
           "h-12",
           "text-center"
-          // "sticky",
-          // "top-0"
         );
         addColumn.textContent = "+";
         wrapperAddColumn.appendChild(addColumn);
@@ -1332,7 +1106,6 @@
             }
           });
         });
-
         for (const item of leadHeader) {
           const column = document.createElement("div");
           column.classList.add(
@@ -1344,10 +1117,9 @@
             "items-center",
             "bg-slate-50",
             "rounded",
-            "py-6"
+            "pb-6"
           );
           wrapper.appendChild(column);
-
           const head = document.createElement("h2");
           const titleHead = document.createElement("span");
           titleHead.textContent = item.value;
@@ -1365,7 +1137,7 @@
             "top-0",
             "p-4"
           );
-          const countRecord = document.createElement("span"); // badge compteur
+          const countRecord = document.createElement("span");
           countRecord.textContent = "0";
           countRecord.className =
             "inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold bg-emerald-400 rounded-full";
@@ -1375,36 +1147,26 @@
 
           const hiddenSet = new Set(getHiddenFor(source).map(norm));
           const labelKey = norm(item.value);
-
           if (hiddenSet.has(labelKey)) {
             column.style.display = "none";
           }
-
           enableColumnDrop(column, item.value, source);
           let count = 0;
-
           for (const record of records) {
             const cellValue = record[source];
             const headerValue = item.value;
-
             let isMatch = false;
-
             if (headerValue === empty) {
               isMatch = isEmptyValue(cellValue);
             } else if (Array.isArray(cellValue)) {
-              // ChoiceList : on vérifie si au moins une valeur de la liste correspond
               isMatch = cellValue.some(
                 (v) => strNoAccent(v) === strNoAccent(headerValue)
               );
             } else {
-              // Choice (scalaire)
               isMatch = strNoAccent(cellValue) === strNoAccent(headerValue);
             }
-
             if (!isMatch) continue;
-
             count++;
-
             const card = document.createElement("div");
             card.classList.add(
               "card",
@@ -1421,29 +1183,25 @@
               "dark:hover:bg-gray-700",
               "overflow-hidden"
             );
-
             let candidateCids = allColsMeta
               .map((c) => c.colId || c.id)
               .filter(
                 (cid) =>
                   cid &&
                   cid !== "id" &&
-                  cid !== source && // ne pas ré-afficher la colonne source
+                  cid !== source &&
                   cid !== "manualSort" &&
                   !cid.includes("gristHelper_Display")
               );
             candidateCids = candidateCids.filter((cid) => cid in record);
             let keys;
             if (mode === "all") {
-              // Tout afficher
               keys = candidateCids;
             } else if (mode === "custom") {
-              // Respecter les champs masqués
               keys = candidateCids.filter(
                 (cid) => !hiddenFieldSet.has(norm(cid))
               );
             } else {
-              // default : 3 premiers non vides (fallback 3 premiers)
               const nonEmpty = [];
               for (const k of candidateCids) {
                 const v = record[k];
@@ -1452,12 +1210,10 @@
               }
               keys = nonEmpty.length ? nonEmpty : candidateCids.slice(0, 3);
             }
-
             for (const infos of keys) {
               const meta = getColMetaByAnyKey(infos);
               const fieldType = getFieldType(meta);
               const style = getDisplayStyle(meta);
-
               const row = document.createElement("div");
               row.classList.add(
                 "flex",
@@ -1469,50 +1225,37 @@
               const titleItem = document.createElement("p");
               titleItem.innerHTML = `${infos}&nbsp;:`;
               titleItem.classList.add("font-semibold");
-              // const contentItem = document.createElement("p");
-
               const raw = record[infos];
               const contentEl = renderFieldValue(meta, fieldType, style, raw);
-
               row.appendChild(titleItem);
               row.appendChild(contentEl);
               card.appendChild(row);
             }
             column.appendChild(card);
             card.dataset.rowId = record.id;
-
             card.addEventListener("click", () => {
               if (record.id !== undefined) {
-                grist.setCursorPos({ rowId: record.id }); // Position l'éditeur de Grist sur le bon record
+                grist.setCursorPos({ rowId: record.id });
               }
             });
-
             makeCardDraggable(card, record.id, item.value, source);
           }
           countRecord.textContent = String(count);
         }
       }
       function rerenderKanban(selectedColumn, records, colId) {
-        // 1) Construire TOUS les headers
-        const allHeaders = renderHeader(selectedColumn, records); // ex. renvoie [{index, value}, …]
-
-        // 2) Filtrer selon l’option "hidden" persistée
+        const allHeaders = renderHeader(selectedColumn, records);
         const visibleHeaders = buildVisibleHeaders(selectedColumn, allHeaders);
-
-        // 3) Dessiner uniquement les colonnes visibles
         createKanban(visibleHeaders, wrapper, records, colId);
       }
-
       function catchColumn(choices, selectedSource) {
         for (const col of choices) {
           if ((col.colId || col.id) === selectedSource) {
-            return col; // on renvoie l'objet méta complet (accès à widgetOptions)
+            return col;
           }
         }
         return null;
       }
-
-      // Met à jour la cellule (Choice ou ChoiceList) après un drop
       async function updateCardAfterDrop(
         rowId,
         sourceColId,
@@ -1521,28 +1264,21 @@
         currentCellValue
       ) {
         await initCurrentTableId();
-        // Normalise pour comparer sans accents
         const eq = (a, b) => strNoAccent(a) === strNoAccent(b);
-
         let newValue;
         if (toHeaderValue === empty) {
           newValue = Array.isArray(currentCellValue) ? [] : null;
         } else if (Array.isArray(currentCellValue)) {
-          // CHOICELIST : on retire l'ancienne valeur (si présente) et on ajoute la nouvelle
           const withoutOld = currentCellValue.filter(
             (v) => !eq(v, fromHeaderValue)
           );
-          // Évite doublon
           if (!withoutOld.some((v) => eq(v, toHeaderValue))) {
             withoutOld.push(toHeaderValue);
           }
           newValue = withoutOld;
         } else {
-          // CHOICE (scalaire) : on remplace simplement par la nouvelle valeur
           newValue = toHeaderValue;
         }
-
-        // Update côté Grist
         const action = [
           "UpdateRecord",
           currentTableId,
@@ -1551,37 +1287,26 @@
         ];
         await grist.docApi.applyUserActions([action]);
       }
-
-      // Active le drop sur une colonne Kanban donnée
       function enableColumnDrop(columnEl, headerValue, sourceColId) {
-        // Autorise le dépôt
         columnEl.addEventListener("dragover", (e) => {
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
           columnEl.classList.add("ring-2", "ring-emerald-500");
         });
-
         columnEl.addEventListener("dragleave", () => {
           columnEl.classList.remove("ring-2", "ring-emerald-500");
         });
-
-        // Récupère les infos envoyées par la carte au dragstart et update
         columnEl.addEventListener("drop", async (e) => {
           e.preventDefault();
           columnEl.classList.remove("ring-2", "ring-emerald-500");
           const rowId = Number(e.dataTransfer.getData("rowId"));
-          const fromHeader = e.dataTransfer.getData("fromHeader"); // d'où venait la carte
-          const sourceCol = e.dataTransfer.getData("sourceColId"); // sécurité (doit = sourceColId)
-
+          const fromHeader = e.dataTransfer.getData("fromHeader");
+          const sourceCol = e.dataTransfer.getData("sourceColId");
           if (!rowId || !sourceCol) return;
           if (sourceCol !== sourceColId) return;
-
-          // On a besoin de la valeur actuelle pour savoir si c'est ChoiceList
           const record = lastRecords.find((r) => r.id === rowId);
           if (!record) return;
           const currentCellValue = record[sourceColId];
-
-          // headerValue = valeur de la colonne où on droppe
           await updateCardAfterDrop(
             rowId,
             sourceColId,
@@ -1592,11 +1317,12 @@
         });
       }
 
-      // Écouteur d'événements pour le changement de sélection dans le menu déroulant
+      // =====================================================================
+      // 12) ÉVÉNEMENTS UI & CYCLE DE VIE GRIST
+      // =====================================================================
       select.addEventListener("change", async () => {
         const selectedSource = select.value;
         await setStoredSource(selectedSource);
-
         const selectedColumn = catchColumn(choices, selectedSource);
         if (!selectedColumn) return;
         renderVisibilityUI(selectedColumn);
@@ -1604,13 +1330,36 @@
         rerenderKanban(selectedColumn, lastRecords, selectedSource);
       });
 
-      // Écouteurs d'événements Grist
+      // Initialisation: charge les colonnes Choice/ChoiceList et peuple le select
+      (async () => {
+        try {
+          const cols = await getAllColumns();
+          allColsMeta = cols;
+          for (const col of cols) {
+            if (isChoiceLike(col)) {
+              const option = document.createElement("option");
+              option.classList.add(
+                "text-sm",
+                "select-none",
+                "focus:bg-emerald-500",
+                "focus:text-white"
+              );
+              option.value = col.colId || col.id || "";
+              option.textContent = col.label || col.colId || "(?)";
+              select.appendChild(option);
+              choices.push(col);
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      })();
+
+      // Réception des records et rendu du Kanban
       grist.onRecords(async (records) => {
         lastRecords = records || [];
-
         await initCurrentTableId();
         await initChoicesOnce();
-
         if (select.value === "none") {
           const stored = getStoredSource();
           if (stored) {
@@ -1628,6 +1377,41 @@
         rerenderKanban(selectedColumn, lastRecords, selectedSource);
       });
 
+      // Petit init one-shot des choix (remplissage du select + mémorisation)
+      async function initChoicesOnce() {
+        if (choicesInitialized) return;
+        const cols = await getAllColumns();
+        allColsMeta = cols;
+        rebuildMetaIndex();
+        while (select.options.length > 1) select.remove(1);
+        choices = [];
+        for (const col of cols) {
+          if (isChoiceLike(col)) {
+            const opt = document.createElement("option");
+            opt.value = col.colId || col.id || "";
+            opt.textContent = col.label || col.colId || "(?)";
+            select.appendChild(opt);
+            choices.push(col);
+          }
+        }
+        const stored = getStoredSource();
+        if (stored) {
+          const has = Array.from(select.options).some(
+            (o) => o.value === stored
+          );
+          if (has) {
+            select.value = stored;
+          }
+        }
+        if (select.value === "none" && select.options.length > 1) {
+          select.value = select.options[1].value;
+          await setStoredSource(select.value);
+        }
+        choicesInitialized = true;
+        // debugDumpColumnFormats();
+      }
+
+      // Hook vide (réservé si besoin plus tard)
       grist.onRecord((record) => {});
     </script>
   </body>
