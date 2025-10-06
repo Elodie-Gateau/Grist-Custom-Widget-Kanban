@@ -530,9 +530,10 @@
       }
 
       function getHidePastFlag() {
-        return widgetOptions?.[DATE_FILTER_HIDE_PAST_KEY] === false;
+        return widgetOptions?.[DATE_FILTER_HIDE_PAST_KEY];
       }
       async function setHidePastFlag(flag) {
+        widgetOptions[DATE_FILTER_HIDE_PAST_KEY] = !!flag;
         await grist.widgetApi.setOption(DATE_FILTER_HIDE_PAST_KEY, !!flag);
       }
 
