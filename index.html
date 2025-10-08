@@ -1571,6 +1571,8 @@
         lastRecords = records || [];
         await initCurrentTableId();
         await initChoicesOnce();
+        allColsMeta = await getAllColumns();
+        rebuildMetaIndex();
         if (select.value === "none") {
           const stored = getStoredSource();
           if (stored) {
