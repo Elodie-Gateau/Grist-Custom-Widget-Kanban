@@ -1568,6 +1568,11 @@
 
       // Réception des records et rendu du Kanban
       grist.onRecords(async (records) => {
+        console.log(
+          "Colonnes réellement reçues dans onRecords:",
+          Object.keys((records || [{}])[0] || {})
+        );
+
         lastRecords = records || [];
         await initCurrentTableId();
         await initChoicesOnce();
