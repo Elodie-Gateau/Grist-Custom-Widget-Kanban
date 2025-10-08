@@ -5,6 +5,14 @@
     <title>Kanban</title>
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .lane:not(:first-child) .column-head {
+        display: none;
+      }
+      .lane:not(:first-child) .add-col {
+        display: none;
+      }
+    </style>
   </head>
   <body class="w-full">
     <div style="font-family: sans-serif; padding: 1em">
@@ -21,6 +29,14 @@
           <option class="text-sm" value="none" selected>
             Choisissez une source
           </option>
+        </select>
+
+        <select
+          name="laneby"
+          id="laneBy"
+          class="rounded py-2 px-3 text-sm shadow-md dark:bg-gray-500"
+        >
+          <option class="text-sm" value="" selected>Regrouper par...</option>
         </select>
 
         <button
@@ -76,6 +92,7 @@
 
       // Raccourcis vers les éléments de l'interface
       const select = document.getElementById("sortBy");
+      const laneSelect = document.getElementById("laneBy");
       const wrapper = document.getElementById("wrapper");
       const visBtn = document.getElementById("visBtn");
       const visPanel = document.getElementById("visPanel");
@@ -688,12 +705,77 @@
       }
 
       // =====================================================================
+      // 8c) HELPERS LANE
+      // =====================================================================
+      function labelForLane(meta, raw) {
+        if (!meta) return String(raw ?? "");
+        const ft = getFieldType(meta);
+
+        if (ft === "ChoiceList" && Array.isArray(raw)) {
+          return (raw.length ? raw : [empty]).map((v) => String(v));
+        }
+
+        if (ft === "Choice") {
+          const s = String(raw ?? "");
+          return s ? [s] : [empty];
+        }
+
+        if (ft === "Ref") {
+          const id = refIdFromAny(raw);
+          return [id != null ? `#${id}` : empty];
+        }
+
+        if (ft === "RefList" && Array.isArray(raw)) {
+          const ids = refListIdsFromAny(raw);
+          return ids.length ? ids.map((id) => `#${id}`) : [empty];
+        }
+
+        if (ft === "Date" || ft === "DateTime" || ft === "Time") {
+          const d = toDate(raw);
+          if (!d) return [empty];
+
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          const day = String(d.getDate()).padStart(2, "0");
+          return [`${y}-${m}-${day}`];
+        }
+
+        const s = raw == null || raw === "" ? empty : String(raw);
+        return [s];
+      }
+
+      // Regroupe les records par laneKey (le champ choisi)
+      function groupRecordsByLane(records, laneColId) {
+        if (!laneColId) return { order: [], groups: new Map() };
+
+        const meta = getColMetaByAnyKey(laneColId);
+        const map = new Map();
+        const order = [];
+
+        for (const r of records || []) {
+          const buckets = labelForLane(meta, r[laneColId]);
+          for (const label of buckets) {
+            if (!map.has(label)) {
+              map.set(label, []);
+              order.push(label);
+            }
+            map.get(label).push(r);
+          }
+        }
+
+        if (order.length === 0) {
+          map.set(empty, records || []);
+          order.push(empty);
+        }
+        return { order, groups: map };
+      }
+      // =====================================================================
       // 9) RENDU DES VALEURS (HTML) & COMPOSANTS D'UI
       // =====================================================================
       // Construit les en-têtes (y compris la colonne « (vide) »)
       function renderHeader(source, records) {
         const order = getChoicesFromMeta(source);
-        wrapper.innerHTML = "";
+        // wrapper.innerHTML = "";
         const headers = order.map((value, index) => ({ index, value }));
         headers.unshift({ index: 0, value: empty });
         return headers;
@@ -923,7 +1005,7 @@
             if (cb.checked) cur.delete(key);
             else cur.add(key);
             await setHiddenFor(colId, Array.from(cur));
-            rerenderKanban(colMeta, lastRecords, colId);
+            renderBoard(colMeta, lastRecords, colId);
             renderVisibilityUI(colMeta);
           });
           const span = document.createElement("span");
@@ -995,7 +1077,7 @@
         const selectedColumn = catchColumn(choices, selectedSource);
         if (selectedColumn) {
           renderVisibilityUI(selectedColumn);
-          rerenderKanban(selectedColumn, lastRecords, selectedSource);
+          renderBoard(selectedColumn, lastRecords, selectedSource);
         }
       }
 
@@ -1048,7 +1130,7 @@
           }
           const selectedColumn = catchColumn(choices, sourceColId);
           if (selectedColumn) {
-            rerenderKanban(selectedColumn, lastRecords, sourceColId);
+            renderBoard(selectedColumn, lastRecords, sourceColId);
             renderFieldsUI(selectedColumn);
           }
         });
@@ -1096,7 +1178,7 @@
             await setHiddenFieldsMode(tableId, sourceColId, "custom");
             const selectedColumn = catchColumn(choices, sourceColId);
             if (selectedColumn) {
-              rerenderKanban(selectedColumn, lastRecords, sourceColId);
+              renderBoard(selectedColumn, lastRecords, sourceColId);
               renderFieldsUI(selectedColumn);
             }
           });
@@ -1193,7 +1275,7 @@
           const selectedSource = select.value;
           const selectedColumn = catchColumn(choices, selectedSource);
           if (!selectedColumn) return;
-          rerenderKanban(
+          renderBoard(
             selectedColumn,
             applyDateFilter(lastRecords),
             selectedSource
@@ -1205,13 +1287,20 @@
           const selectedSource = select.value;
           const selectedColumn = catchColumn(choices, selectedSource);
           if (!selectedColumn) return;
-          rerenderKanban(
+          renderBoard(
             selectedColumn,
             applyDateFilter(lastRecords),
             selectedSource
           );
         });
       }
+
+      laneSelect.addEventListener("change", () => {
+        const selectedSource = select.value;
+        const selectedColumn = catchColumn(choices, selectedSource);
+        if (!selectedColumn) return;
+        renderBoard(selectedColumn, lastRecords, selectedSource);
+      });
 
       // bouton d’affichage/masquage du panneau
       const dateClass = datePanel.classList;
@@ -1258,6 +1347,7 @@
         const hiddenFieldSet = new Set(hiddenFields.map(norm));
         const wrapperAddColumn = document.createElement("div");
         wrapperAddColumn.classList.add(
+          "add-col",
           "flex",
           "items-center",
           "bg-emerald-500",
@@ -1327,6 +1417,7 @@
           titleHead.textContent = item.value;
           titleHead.classList.add("text-center", "font-semibold");
           head.classList.add(
+            "column-head",
             "w-full",
             "min-w-0",
             "flex",
@@ -1528,6 +1619,65 @@
         });
       }
 
+      function renderBoard(selectedColumn, records, sourceColId) {
+        const laneColId = laneSelect.value || "";
+        const filtered = applyDateFilter(records);
+
+        // Pas de regroupement -> comportement actuel (1 seul kanban)
+        if (!laneColId) {
+          rerenderKanban(selectedColumn, filtered, sourceColId);
+          return;
+        }
+
+        // Avec regroupement
+        wrapper.innerHTML = ""; // on reconstruit la grille de lignes
+        wrapper.className = "w-full flex flex-col gap-6";
+        const { order, groups } = groupRecordsByLane(filtered, laneColId);
+
+        // Bandeau de titre des colonnes (optionnel mais utile en multi-ligne)
+        // On peut le rendre une seule fois au-dessus, en réutilisant ta logique de header :
+        const headers = buildVisibleHeaders(
+          selectedColumn,
+          renderHeader(selectedColumn, filtered)
+        );
+
+        // Pour chaque lane, on fait une rangée: libellé + compteur + kanban
+        for (const laneLabel of order) {
+          const row = document.createElement("div");
+          row.className = "lane w-full flex items-start gap-2";
+
+          // Panneau de gauche (étiquette de ligne)
+          const left = document.createElement("div");
+          left.className =
+            "w-52 shrink-0 rounded bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 p-2 flex items-center justify-between sticky left-0 z-10";
+          const laneTitle = document.createElement("span");
+          laneTitle.className = "font-semibold";
+          laneTitle.textContent = laneLabel;
+          const laneCount = document.createElement("span");
+          laneCount.className =
+            "text-xs inline-flex items-center justify-center px-2 py-0.5 font-semibold bg-emerald-100 text-emerald-700 rounded-full";
+          laneCount.textContent = String((groups.get(laneLabel) || []).length);
+          left.appendChild(laneTitle);
+          left.appendChild(laneCount);
+
+          // Panneau de droite (le kanban de la lane)
+          const laneWrapper = document.createElement("div");
+          laneWrapper.className =
+            "flex-1 overflow-x-auto text-xs w-full items-stretch justify-between flex gap-2";
+
+          row.appendChild(left);
+          row.appendChild(laneWrapper);
+          wrapper.appendChild(row);
+
+          createKanban(
+            headers,
+            laneWrapper,
+            groups.get(laneLabel) || [],
+            sourceColId
+          );
+        }
+      }
+
       // =====================================================================
       // 12) ÉVÉNEMENTS UI & CYCLE DE VIE GRIST
       // =====================================================================
@@ -1538,7 +1688,7 @@
         if (!selectedColumn) return;
         renderVisibilityUI(selectedColumn);
         renderFieldsUI(selectedColumn);
-        rerenderKanban(selectedColumn, lastRecords, selectedSource);
+        renderBoard(selectedColumn, lastRecords, selectedSource);
       });
 
       // Initialisation: charge les colonnes Choice/ChoiceList et peuple le select
@@ -1546,6 +1696,7 @@
         try {
           const cols = await getAllColumns();
           allColsMeta = cols;
+
           for (const col of cols) {
             if (isChoiceLike(col)) {
               const option = document.createElement("option");
@@ -1559,6 +1710,19 @@
               option.textContent = col.label || col.colId || "(?)";
               select.appendChild(option);
               choices.push(col);
+
+              const cid = col.colId || col.id || "";
+              if (
+                !cid ||
+                cid === "id" ||
+                cid === "manualSort" ||
+                cid.includes("gristHelper_Display")
+              )
+                continue;
+              const opt = document.createElement("option");
+              opt.value = cid;
+              opt.textContent = col.label || cid;
+              laneSelect.appendChild(opt);
             }
           }
         } catch (e) {
@@ -1568,11 +1732,6 @@
 
       // Réception des records et rendu du Kanban
       grist.onRecords(async (records) => {
-        console.log(
-          "Colonnes réellement reçues dans onRecords:",
-          Object.keys((records || [{}])[0] || {})
-        );
-
         lastRecords = records || [];
         await initCurrentTableId();
         await initChoicesOnce();
@@ -1593,7 +1752,7 @@
         renderVisibilityUI(selectedColumn);
         renderFieldsUI(selectedColumn);
         renderDateFilterUI();
-        rerenderKanban(selectedColumn, lastRecords, selectedSource);
+        renderBoard(selectedColumn, lastRecords, selectedSource);
       });
 
       // Petit init one-shot des choix (remplissage du select + mémorisation)
