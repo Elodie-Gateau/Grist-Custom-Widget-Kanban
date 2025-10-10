@@ -5,14 +5,6 @@
     <title>Kanban</title>
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      .lane:not(:first-child) .column-head {
-        display: none;
-      }
-      .lane:not(:first-child) .add-col {
-        display: none;
-      }
-    </style>
   </head>
   <body class="w-full">
     <div style="font-family: sans-serif; padding: 1em">
@@ -111,6 +103,12 @@
       let currentTableId = null;
       let widgetOptions = {};
       let choicesInitialized = false;
+      let openLanes = new Set();
+      let currentCtx = {
+        headers: [],
+        groups: new Map(),
+        sourceColId: null,
+      };
 
       // =====================================================================
       // 1) HELPERS GÉNÉRIQUES (string, JSON, tests, normalisation)
@@ -151,6 +149,16 @@
       function isEmptyValue(v) {
         if (Array.isArray(v)) return v.length === 0;
         return v === null || v === undefined || v === "";
+      }
+
+      // Crée un slug simple (pour id HTML/CSS)
+      function slug(s) {
+        return String(s ?? "")
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/(^-|-$)/g, "");
       }
 
       // =====================================================================
@@ -769,6 +777,21 @@
         }
         return { order, groups: map };
       }
+
+      function syncHorizontalScroll(elements) {
+        let lock = false;
+        elements.forEach((el) => {
+          el.addEventListener("scroll", () => {
+            if (lock) return;
+            lock = true;
+            const x = el.scrollLeft;
+            elements.forEach((other) => {
+              if (other !== el) other.scrollLeft = x;
+            });
+            lock = false;
+          });
+        });
+      }
       // =====================================================================
       // 9) RENDU DES VALEURS (HTML) & COMPOSANTS D'UI
       // =====================================================================
@@ -1329,6 +1352,47 @@
       // =====================================================================
       // 11) CONSTRUCTION DU KANBAN & DRAG/DROP
       // =====================================================================
+      function updateHeaderCounts() {
+        const { headers, groups, sourceColId } = currentCtx;
+        if (!headers || !headers.length || !sourceColId) return;
+
+        // on prend uniquement les records des lanes OUVERTES
+        const activeLabels = Array.from(openLanes);
+        const activeRecords = activeLabels.flatMap((l) => groups.get(l) || []);
+
+        // prépare un compteur par colonne
+        const counts = new Map(headers.map((h) => [h.value, 0]));
+
+        // même logique de matching que dans createKanban
+        const eq = (a, b) => strNoAccent(a) === strNoAccent(b);
+
+        for (const rec of activeRecords) {
+          const val = rec[sourceColId];
+          for (const h of headers) {
+            const hv = h.value;
+            let match = false;
+            if (hv === empty) {
+              match = isEmptyValue(val);
+            } else if (Array.isArray(val)) {
+              match = val.some((v) => eq(v, hv));
+            } else {
+              match = eq(val, hv);
+            }
+            if (match) {
+              counts.set(hv, (counts.get(hv) || 0) + 1);
+              break;
+            }
+          }
+        }
+
+        // pousse les valeurs dans la barre d’entêtes
+        const badges = wrapper.querySelectorAll("[data-count-for]");
+        badges.forEach((el) => {
+          const key = el.getAttribute("data-count-for");
+          el.textContent = String(counts.get(key) || 0);
+        });
+      }
+
       function makeCardDraggable(cardEl, rowId, fromHeaderValue, sourceColId) {
         cardEl.draggable = true;
         cardEl.addEventListener("dragstart", (e) => {
@@ -1338,70 +1402,79 @@
           e.dataTransfer.effectAllowed = "move";
         });
       }
-      function createKanban(leadHeader, wrapper, records, source) {
+      function createKanban(leadHeader, wrapper, records, source, opts = {}) {
+        const {
+          showHeaders = true,
+          showAdd = true,
+          onlyHeaders = false,
+        } = opts;
+
         const sourceColId = source;
         wrapper.innerHTML = "";
         const tableId = currentTableId;
         const mode = getHiddenFieldsMode(tableId, sourceColId);
         const hiddenFields = getHiddenFields(tableId, sourceColId);
         const hiddenFieldSet = new Set(hiddenFields.map(norm));
-        const wrapperAddColumn = document.createElement("div");
-        wrapperAddColumn.classList.add(
-          "add-col",
-          "flex",
-          "items-center",
-          "bg-emerald-500",
-          "rounded-full",
-          "self-start",
-          "cursor-pointer",
-          "sticky",
-          "top-0"
-        );
-        const addColumn = document.createElement("div");
-        addColumn.classList.add(
-          "p-2",
-          "flex",
-          "items-center",
-          "justify-center",
-          "text-white",
-          "text-xl",
-          "font-bold",
-          "leading-none",
-          "w-12",
-          "h-12",
-          "text-center"
-        );
-        addColumn.textContent = "+";
-        wrapperAddColumn.appendChild(addColumn);
-        wrapper.appendChild(wrapperAddColumn);
-        addColumn.addEventListener("click", async () => {
-          const input = document.createElement("input");
-          input.type = "text";
-          input.placeholder = "Nouvelle colonne";
-          input.className =
-            "p-2 rounded border border-emerald-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500";
-          addColumn.replaceWith(input);
-          const submit = document.createElement("input");
-          submit.type = "submit";
-          submit.value = "OK";
-          submit.className =
-            "p-2 mt-2 w-auto rounded bg-emerald-500 text-white font-semibold hover:bg-emerald-600 cursor-pointer";
-          wrapperAddColumn.appendChild(submit);
-          wrapperAddColumn.classList.add("gap-2", "w-full", "bg-transparent");
-          submit.addEventListener("click", async () => {
-            const val = input.value;
-            if (val && val.trim()) {
-              await addChoiceToSourceColumn(source, val.trim());
-              input.replaceWith(addColumn);
-              submit.classList.add("hidden");
-            }
+
+        if (showAdd) {
+          const wrapperAddColumn = document.createElement("div");
+          wrapperAddColumn.classList.add(
+            "add-col",
+            "flex",
+            "items-center",
+            "bg-emerald-500",
+            "rounded-full",
+            "self-start",
+            "cursor-pointer",
+            "sticky",
+            "top-0"
+          );
+          const addColumn = document.createElement("div");
+          addColumn.classList.add(
+            "p-2",
+            "flex",
+            "items-center",
+            "justify-center",
+            "text-white",
+            "text-xl",
+            "font-bold",
+            "leading-none",
+            "w-12",
+            "h-12",
+            "text-center"
+          );
+          addColumn.textContent = "+";
+          wrapperAddColumn.appendChild(addColumn);
+          wrapper.appendChild(wrapperAddColumn);
+          addColumn.addEventListener("click", async () => {
+            const input = document.createElement("input");
+            input.type = "text";
+            input.placeholder = "Nouvelle colonne";
+            input.className =
+              "p-2 rounded border border-emerald-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500";
+            addColumn.replaceWith(input);
+            const submit = document.createElement("input");
+            submit.type = "submit";
+            submit.value = "OK";
+            submit.className =
+              "p-2 mt-2 w-auto rounded bg-emerald-500 text-white font-semibold hover:bg-emerald-600 cursor-pointer";
+            wrapperAddColumn.appendChild(submit);
+            wrapperAddColumn.classList.add("gap-2", "w-full", "bg-transparent");
+            submit.addEventListener("click", async () => {
+              const val = input.value;
+              if (val && val.trim()) {
+                await addChoiceToSourceColumn(source, val.trim());
+                input.replaceWith(addColumn);
+                submit.classList.add("hidden");
+              }
+            });
           });
-        });
+        }
+
         for (const item of leadHeader) {
           const column = document.createElement("div");
           column.classList.add(
             "w-full",
-            "min-w-0",
             "flex",
             "flex-col",
             "gap-4",
@@ -1412,137 +1485,145 @@
             "pb-6"
           );
           wrapper.appendChild(column);
-          const head = document.createElement("h2");
-          const titleHead = document.createElement("span");
-          titleHead.textContent = item.value;
-          titleHead.classList.add("text-center", "font-semibold");
-          head.classList.add(
-            "column-head",
-            "w-full",
-            "min-w-0",
-            "flex",
-            "justify-around",
-            "items-center",
-            "bg-emerald-500",
-            "text-white",
-            "rounded-t",
-            "sticky",
-            "top-0",
-            "p-4"
-          );
-          const countRecord = document.createElement("span");
-          countRecord.textContent = "0";
-          countRecord.className =
-            "inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold bg-emerald-400 rounded-full";
-          head.appendChild(titleHead);
-          head.appendChild(countRecord);
-          column.prepend(head);
 
+          let countRecord = null;
+          if (showHeaders) {
+            const head = document.createElement("h2");
+            const titleHead = document.createElement("span");
+            titleHead.textContent = item.value;
+            titleHead.classList.add("text-center", "font-semibold");
+            head.classList.add(
+              "column-head",
+              "w-full",
+              "min-w-0",
+              "flex",
+              "justify-around",
+              "items-center",
+              "bg-emerald-500",
+              "text-white",
+              "rounded-t",
+              "sticky",
+              "top-0",
+              "p-4"
+            );
+            countRecord = document.createElement("span");
+            countRecord.setAttribute("data-count-for", item.value); // clé = libellé de la colonne
+            countRecord.textContent = "0";
+            countRecord.className =
+              "inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold bg-emerald-400 rounded-full";
+            head.appendChild(titleHead);
+            head.appendChild(countRecord);
+            column.prepend(head);
+          }
           const hiddenSet = new Set(getHiddenFor(source).map(norm));
           const labelKey = norm(item.value);
           if (hiddenSet.has(labelKey)) {
             column.style.display = "none";
           }
+
           enableColumnDrop(column, item.value, source);
           let count = 0;
-          for (const record of records) {
-            const cellValue = record[source];
-            const headerValue = item.value;
-            let isMatch = false;
-            if (headerValue === empty) {
-              isMatch = isEmptyValue(cellValue);
-            } else if (Array.isArray(cellValue)) {
-              isMatch = cellValue.some(
-                (v) => strNoAccent(v) === strNoAccent(headerValue)
-              );
-            } else {
-              isMatch = strNoAccent(cellValue) === strNoAccent(headerValue);
-            }
-            if (!isMatch) continue;
-            count++;
-            const card = document.createElement("div");
-            card.classList.add(
-              "card",
-              "w-5/6",
-              "min-w-0",
-              "rounded-lg",
-              "shadow-lg",
-              "p-3",
-              "h-auto",
-              "cursor-pointer",
-              "bg-white",
-              "hover:bg-emerald-50",
-              "dark:bg-gray-500",
-              "dark:hover:bg-emerald-800",
-              "overflow-hidden"
-            );
-            let candidateCids = allColsMeta
-              .map((c) => c.colId || c.id)
-              .filter(
-                (cid) =>
-                  cid &&
-                  cid !== "id" &&
-                  cid !== source &&
-                  cid !== "manualSort" &&
-                  !cid.includes("gristHelper_Display")
-              );
-            // candidateCids = candidateCids.filter((cid) => cid in record);
-            let keys;
-            if (mode === "all") {
-              keys = candidateCids;
-            } else if (mode === "custom") {
-              keys = candidateCids.filter(
-                (cid) => !hiddenFieldSet.has(norm(cid))
-              );
-            } else {
-              const nonEmpty = [];
-              for (const k of candidateCids) {
-                const v = record[k];
-                if (!isEmptyValue(v)) nonEmpty.push(k);
-                if (nonEmpty.length === 3) break;
+          if (!onlyHeaders) {
+            for (const record of records) {
+              const cellValue = record[source];
+              const headerValue = item.value;
+              let isMatch = false;
+              if (headerValue === empty) {
+                isMatch = isEmptyValue(cellValue);
+              } else if (Array.isArray(cellValue)) {
+                isMatch = cellValue.some(
+                  (v) => strNoAccent(v) === strNoAccent(headerValue)
+                );
+              } else {
+                isMatch = strNoAccent(cellValue) === strNoAccent(headerValue);
               }
-              keys = nonEmpty.length ? nonEmpty : candidateCids.slice(0, 3);
-            }
-            for (const infos of keys) {
-              const meta = getColMetaByAnyKey(infos);
-              const fieldType = getFieldType(meta);
-              const style = getDisplayStyle(meta);
-              const row = document.createElement("div");
-              row.classList.add(
-                "flex",
-                "flex-col",
-                "gap-2",
-                "items-start",
-                "p-2"
+              if (!isMatch) continue;
+              count++;
+              const card = document.createElement("div");
+              card.classList.add(
+                "card",
+                "w-5/6",
+                "min-w-0",
+                "rounded-lg",
+                "shadow-lg",
+                "p-3",
+                "h-auto",
+                "cursor-pointer",
+                "bg-white",
+                "hover:bg-emerald-50",
+                "dark:bg-gray-500",
+                "dark:hover:bg-emerald-800",
+                "overflow-hidden"
               );
-              const titleItem = document.createElement("p");
-              titleItem.innerHTML = `${infos}&nbsp;:`;
-              titleItem.classList.add(
-                "font-semibold",
-                "text-gray-800",
-                "dark:text-gray-300"
-              );
-              const raw = record[infos];
-              const contentEl = renderFieldValue(meta, fieldType, style, raw);
-              contentEl.classList.add(
-                "break-words",
-                "text-gray-900",
-                "dark:text-gray-50"
-              );
-              row.appendChild(titleItem);
-              row.appendChild(contentEl);
-              card.appendChild(row);
-            }
-            column.appendChild(card);
-            card.dataset.rowId = record.id;
-            card.addEventListener("click", () => {
-              if (record.id !== undefined) {
-                grist.setCursorPos({ rowId: record.id });
+              let candidateCids = allColsMeta
+                .map((c) => c.colId || c.id)
+                .filter(
+                  (cid) =>
+                    cid &&
+                    cid !== "id" &&
+                    cid !== source &&
+                    cid !== "manualSort" &&
+                    !cid.includes("gristHelper_Display")
+                );
+              // candidateCids = candidateCids.filter((cid) => cid in record);
+              let keys;
+              if (mode === "all") {
+                keys = candidateCids;
+              } else if (mode === "custom") {
+                keys = candidateCids.filter(
+                  (cid) => !hiddenFieldSet.has(norm(cid))
+                );
+              } else {
+                const nonEmpty = [];
+                for (const k of candidateCids) {
+                  const v = record[k];
+                  if (!isEmptyValue(v)) nonEmpty.push(k);
+                  if (nonEmpty.length === 3) break;
+                }
+                keys = nonEmpty.length ? nonEmpty : candidateCids.slice(0, 3);
               }
-            });
-            makeCardDraggable(card, record.id, item.value, source);
+              for (const infos of keys) {
+                const meta = getColMetaByAnyKey(infos);
+                const fieldType = getFieldType(meta);
+                const style = getDisplayStyle(meta);
+                const row = document.createElement("div");
+                row.classList.add(
+                  "flex",
+                  "flex-col",
+                  "gap-2",
+                  "items-start",
+                  "p-2"
+                );
+                const titleItem = document.createElement("p");
+                titleItem.innerHTML = `${infos}&nbsp;:`;
+                titleItem.classList.add(
+                  "font-semibold",
+                  "text-gray-800",
+                  "dark:text-gray-300"
+                );
+                const raw = record[infos];
+                const contentEl = renderFieldValue(meta, fieldType, style, raw);
+                contentEl.classList.add(
+                  "break-words",
+                  "text-gray-900",
+                  "dark:text-gray-50"
+                );
+                row.appendChild(titleItem);
+                row.appendChild(contentEl);
+                card.appendChild(row);
+              }
+              column.appendChild(card);
+              card.dataset.rowId = record.id;
+              card.addEventListener("click", () => {
+                if (record.id !== undefined) {
+                  grist.setCursorPos({ rowId: record.id });
+                }
+              });
+              makeCardDraggable(card, record.id, item.value, source);
+            }
           }
-          countRecord.textContent = String(count);
+          if (showHeaders && countRecord)
+            countRecord.textContent = String(count);
         }
       }
       function rerenderKanban(selectedColumn, records, colId) {
@@ -1589,6 +1670,7 @@
         ];
         await grist.docApi.applyUserActions([action]);
       }
+
       function enableColumnDrop(columnEl, headerValue, sourceColId) {
         columnEl.addEventListener("dragover", (e) => {
           e.preventDefault();
@@ -1641,46 +1723,172 @@
           renderHeader(selectedColumn, filtered)
         );
 
+        const headerRow = document.createElement("div");
+        headerRow.className = "w-full flex items-start gap-2 sticky top-0 z-20";
+        const leftSpacer = document.createElement("div");
+        leftSpacer.className = "w-52 shrink-0";
+        const headerWrapper = document.createElement("div");
+        headerWrapper.className =
+          "w-full overflow-x-auto flex gap-2 header-row kanban-scroll";
+        headerRow.appendChild(leftSpacer);
+        headerRow.appendChild(headerWrapper);
+        wrapper.appendChild(headerRow);
+
+        // Kanban du header global (avec en-têtes et bouton +)
+        createKanban(headers, headerWrapper, filtered, sourceColId, {
+          showHeaders: true,
+          showAdd: true,
+          onlyHeaders: true,
+        });
+
+        currentCtx.headers = headers;
+        currentCtx.groups = groups;
+        currentCtx.sourceColId = sourceColId;
+        updateHeaderCounts();
+
         // Pour chaque lane, on fait une rangée: libellé + compteur + kanban
         for (const laneLabel of order) {
-          const row = document.createElement("div");
-          row.className = "lane w-full flex items-start gap-2";
+          const laneId = `lane-${slug(laneLabel)}`;
 
-          // Panneau de gauche (étiquette de ligne)
-          const left = document.createElement("div");
-          left.className =
-            "w-52 shrink-0 rounded bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 p-2 flex items-center justify-between sticky left-0 z-10";
-          const laneTitle = document.createElement("span");
-          laneTitle.className = "font-semibold";
-          laneTitle.textContent = laneLabel;
-          const laneCount = document.createElement("span");
-          laneCount.className =
-            "text-xs inline-flex items-center justify-center px-2 py-0.5 font-semibold bg-emerald-100 text-emerald-700 rounded-full";
-          laneCount.textContent = String((groups.get(laneLabel) || []).length);
-          left.appendChild(laneTitle);
-          left.appendChild(laneCount);
+          // --- HEADER (bouton d'accordéon)
+          const h2 = document.createElement("h2");
+          h2.id = `${laneId}-heading`;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className =
+            "flex items-center justify-between w-full p-3 font-medium text-gray-600 " +
+            "border border-b-0 border-gray-200 rounded-t-xl focus:ring-4 focus:ring-gray-200 " +
+            "dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-300 " +
+            "hover:bg-gray-100 dark:hover:bg-gray-800 gap-3";
+          btn.setAttribute("data-accordion-target", `#${laneId}-panel`);
+          btn.setAttribute("aria-expanded", "false");
+          btn.setAttribute("aria-controls", `${laneId}-panel`);
 
-          // Panneau de droite (le kanban de la lane)
-          const laneWrapper = document.createElement("div");
-          laneWrapper.className =
-            "flex-1 overflow-x-auto text-xs w-full items-stretch justify-between flex gap-2";
+          const titleWrap = document.createElement("span");
+          titleWrap.className = "flex items-center gap-2";
+          const title = document.createElement("span");
+          title.className = "font-semibold";
+          title.textContent = laneLabel;
+          const badge = document.createElement("span");
+          badge.className =
+            "text-xs inline-flex items-center justify-center px-2 py-0.5 font-semibold " +
+            "bg-emerald-100 text-emerald-700 rounded-full";
+          badge.textContent = String((groups.get(laneLabel) || []).length);
+          titleWrap.appendChild(title);
+          titleWrap.appendChild(badge);
 
-          row.appendChild(left);
-          row.appendChild(laneWrapper);
-          wrapper.appendChild(row);
+          const icon = document.createElement("svg");
+          icon.setAttribute("aria-hidden", "true");
+          icon.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+          icon.setAttribute("fill", "none");
+          icon.setAttribute("viewBox", "0 0 10 6");
+          icon.className = "w-3 h-3 rotate-180 shrink-0";
+          icon.setAttribute("data-accordion-icon", "");
+          icon.innerHTML = `<path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>`;
+
+          btn.appendChild(titleWrap);
+          btn.appendChild(icon);
+          h2.appendChild(btn);
+
+          // --- PANEL (contenu repliable)
+          const panel = document.createElement("div");
+          panel.id = `${laneId}-panel`;
+          panel.className = "panel hidden";
+          panel.setAttribute("aria-labelledby", `${laneId}-heading`);
+          const isOpen = openLanes.has(laneLabel);
+          btn.setAttribute("aria-expanded", String(isOpen));
+          if (!isOpen) {
+            panel.classList.add("hidden");
+          } else {
+            panel.classList.remove("hidden");
+          }
+
+          const panelInner = document.createElement("div");
+          panelInner.className =
+            "panelInner flex border border-t-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900";
+          panel.appendChild(panelInner);
+
+          // Injection dans le wrapper global
+          wrapper.appendChild(h2);
+          wrapper.appendChild(panel);
+
+          // // Conteneur du kanban de la lane
+          // const laneWrapper = document.createElement("div");
+          // laneWrapper.className =
+          //   "lane overflow-x-auto text-xs w-full items-stretch flex  gap-2 kanban-scroll";
+          // panelInner.appendChild(laneWrapper);
+
+          // --- Rangée fantôme (même schéma que le kanban général) ---
+          // const ghostRow = document.createElement("div");
+          // ghostRow.className =
+          //   "ghostRow w-auto flex items-start gap-2 opacity-0 h-0 overflow-hidden pointer-events-none select-none";
+          // panelInner.appendChild(ghostRow);
+
+          const ghostLeftSpacer = document.createElement("div");
+          ghostLeftSpacer.className = "ghostLeftSpacer w-[17rem] shrink-0";
+          panelInner.appendChild(ghostLeftSpacer);
+
+          // const ghostHeaderWrapper = document.createElement("div");
+          // ghostHeaderWrapper.className = "ghostHeaderWrapper  w-12 shrink-0";
+          // ghostRow.appendChild(ghostHeaderWrapper);
+
+          // // headers + colonne “+” invisibles, pour caler les largeurs
+          // createKanban(headers, ghostHeaderWrapper, filtered, sourceColId, {
+          //   showHeaders: true,
+          //   showAdd: true,
+          //   onlyHeaders: true,
+          // });
+
+          // --- Le vrai kanban de la lane (sans headers, sans “+”) ---
+          const laneKanban = document.createElement("div");
+          laneKanban.className = "laneKanban flex gap-2";
+          panelInner.appendChild(laneKanban);
 
           createKanban(
             headers,
-            laneWrapper,
+            laneKanban,
             groups.get(laneLabel) || [],
-            sourceColId
+            sourceColId,
+            {
+              showHeaders: false,
+              showAdd: false,
+            }
           );
         }
+        const scrollers = Array.from(
+          wrapper.querySelectorAll(".kanban-scroll")
+        );
+        syncHorizontalScroll(scrollers);
       }
 
       // =====================================================================
       // 12) ÉVÉNEMENTS UI & CYCLE DE VIE GRIST
       // =====================================================================
+      // ACCORDION: délégation d'événements (une seule fois, au niveau du wrapper)
+      wrapper.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-accordion-target]");
+        if (!btn) return;
+
+        const selector = btn.getAttribute("data-accordion-target");
+        const panel = document.querySelector(selector);
+        if (!panel) return;
+
+        const expanded = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", String(!expanded));
+        panel.classList.toggle("hidden", expanded);
+
+        const icon = btn.querySelector("[data-accordion-icon]");
+        if (icon) icon.classList.toggle("rotate-180", !expanded);
+
+        const heading = btn.closest("h2");
+        const laneLabel =
+          btn.querySelector(".font-semibold")?.textContent || "";
+        if (!expanded) openLanes.add(laneLabel);
+        else openLanes.delete(laneLabel);
+
+        updateHeaderCounts();
+      });
+
       select.addEventListener("change", async () => {
         const selectedSource = select.value;
         await setStoredSource(selectedSource);
