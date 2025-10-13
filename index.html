@@ -1754,6 +1754,7 @@
           // --- HEADER (bouton d'accordéon)
           const h2 = document.createElement("h2");
           h2.id = `${laneId}-heading`;
+          h2.className = "text-xs";
           const btn = document.createElement("button");
           btn.type = "button";
           btn.className =
@@ -1806,7 +1807,7 @@
 
           const panelInner = document.createElement("div");
           panelInner.className =
-            "panelInner flex border border-t-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900";
+            "panelInner w-full flex border border-t-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900";
           panel.appendChild(panelInner);
 
           // Injection dans le wrapper global
@@ -1819,7 +1820,7 @@
 
           // --- Le vrai kanban de la lane (sans headers, sans “+”) ---
           const laneKanban = document.createElement("div");
-          laneKanban.className = "laneKanban flex gap-2 text-xs";
+          laneKanban.className = "laneKanban flex gap-2 text-xs w-full";
           panelInner.appendChild(laneKanban);
 
           createKanban(
