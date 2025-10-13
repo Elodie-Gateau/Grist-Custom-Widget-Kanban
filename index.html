@@ -16,9 +16,9 @@
         <select
           name="sortby"
           id="sortBy"
-          class="rounded py-2 px-3 text-sm shadow-md dark:bg-gray-500"
+          class="rounded py-2 px-3 text-xs shadow-md dark:bg-gray-500"
         >
-          <option class="text-sm" value="none" selected>
+          <option class="text-xs" value="none" selected>
             Choisissez une source
           </option>
         </select>
@@ -26,27 +26,27 @@
         <select
           name="laneby"
           id="laneBy"
-          class="rounded py-2 px-3 text-sm shadow-md dark:bg-gray-500"
+          class="rounded py-2 px-3 text-xs shadow-md dark:bg-gray-500"
         >
-          <option class="text-sm" value="" selected>Regrouper par...</option>
+          <option class="text-xs" value="" selected>Regrouper par...</option>
         </select>
 
         <button
           id="visBtn"
-          class="text-sm py-2 px-3 border-none bg-white rounded shadow-md dark:bg-gray-500 hover:bg-emerald-500 hover:text-white"
+          class="text-xs py-2 px-3 border-none bg-white rounded shadow-md dark:bg-gray-500 hover:bg-emerald-500 hover:text-white"
         >
           Afficher les colonnes
         </button>
         <button
           id="fieldsBtn"
-          class="text-sm py-2 px-3 border-none bg-white rounded dark:bg-gray-500 shadow-md hover:bg-emerald-500 hover:text-white"
+          class="text-xs py-2 px-3 border-none bg-white rounded dark:bg-gray-500 shadow-md hover:bg-emerald-500 hover:text-white"
         >
           Afficher les champs
         </button>
 
         <button
           id="dateBtn"
-          class="text-sm py-2 px-3 border-none bg-white rounded dark:bg-slate-500 shadow-md hover:bg-emerald-500 hover:text-white"
+          class="text-xs py-2 px-3 border-none bg-white rounded dark:bg-slate-500 shadow-md hover:bg-emerald-500 hover:text-white"
         >
           Filtre date
         </button>
@@ -1012,13 +1012,13 @@
         const all = [empty, ...getChoicesFromMeta(colMeta)];
         const hidden = new Set(getHiddenFor(colId).map(norm));
         visPanel.innerHTML =
-          "<div class='font-medium mb-2 text-sm font-bold'>Colonnes :</div>";
+          "<div class='font-medium mb-2 text-xs font-bold'>Colonnes :</div>";
         const list = document.createElement("div");
-        list.className = "grid grid-cols-2 gap-1 text-sm";
+        list.className = "grid grid-cols-2 gap-1 text-xs";
         visPanel.appendChild(list);
         for (const label of all) {
           const row = document.createElement("label");
-          row.className = "flex items-center gap-2  text-sm";
+          row.className = "flex items-center gap-2  text-xs";
           const cb = document.createElement("input");
           cb.type = "checkbox";
           cb.checked = !hidden.has(norm(label));
@@ -1135,9 +1135,9 @@
           }
         };
         fieldsPanel.innerHTML =
-          "<div class='font-medium mb-2 text-sm'>Champs :</div>";
+          "<div class='font-medium mb-2 text-xs'>Champs :</div>";
         const topRow = document.createElement("label");
-        topRow.className = "flex items-center gap-2 mb-2 text-sm";
+        topRow.className = "flex items-center gap-2 mb-2 text-xs";
         const masterCb = document.createElement("input");
         masterCb.type = "checkbox";
         masterCb.checked = mode === "all";
@@ -1163,14 +1163,14 @@
         topRow.appendChild(masterSpan);
         fieldsPanel.appendChild(topRow);
         const list = document.createElement("div");
-        list.className = "grid grid-cols-2 gap-1 text-sm";
+        list.className = "grid grid-cols-2 gap-1 text-xs";
         fieldsPanel.appendChild(list);
         const visibleSetNow = buildVisibleSetFromMode();
         for (const fm of fieldMetas) {
           const cid = fm.colId || fm.id;
           if (!cid || cid === "manualSort") continue;
           const row = document.createElement("label");
-          row.className = "flex items-center gap-2 text-sm";
+          row.className = "flex items-center gap-2 text-xs";
           const cb = document.createElement("input");
           cb.type = "checkbox";
           cb.checked = visibleSetNow.has(cid);
@@ -1230,7 +1230,7 @@
 
         // Titre
         const title = document.createElement("div");
-        title.className = "font-medium mb-2 text-sm";
+        title.className = "font-medium mb-2 text-xs";
         title.textContent = "Filtre par date";
         datePanel.appendChild(title);
 
@@ -1245,13 +1245,13 @@
         container.appendChild(rowSelect);
 
         const lblSelect = document.createElement("span");
-        lblSelect.className = "text-sm w-40";
+        lblSelect.className = "text-xs w-40";
         lblSelect.textContent = "Champ date :";
         rowSelect.appendChild(lblSelect);
 
         const selectEl = document.createElement("select");
         selectEl.id = "dateFilterSelect";
-        selectEl.className = "rounded-lg p-2 text-sm shadow-md";
+        selectEl.className = "rounded-lg p-2 text-xs shadow-md";
         rowSelect.appendChild(selectEl);
 
         // Option "aucun"
@@ -1281,7 +1281,7 @@
         rowCheckbox.appendChild(cb);
 
         const cbText = document.createElement("span");
-        cbText.className = "text-sm";
+        cbText.className = "text-xs";
         cbText.textContent = "Masquer les cartes dont la date est passée";
         rowCheckbox.appendChild(cbText);
 
@@ -1910,7 +1910,7 @@
             if (isChoiceLike(col)) {
               const option = document.createElement("option");
               option.classList.add(
-                "text-sm",
+                "text-xs",
                 "select-none",
                 "focus:bg-emerald-500",
                 "focus:text-white"
