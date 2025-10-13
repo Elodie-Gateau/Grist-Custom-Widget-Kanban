@@ -1491,7 +1491,7 @@
             const head = document.createElement("h2");
             const titleHead = document.createElement("span");
             titleHead.textContent = item.value;
-            titleHead.classList.add("text-center", "font-semibold");
+            titleHead.classList.add("text-center", "text-xs", "font-semibold");
             head.classList.add(
               "column-head",
               "w-full",
@@ -1813,36 +1813,13 @@
           wrapper.appendChild(h2);
           wrapper.appendChild(panel);
 
-          // // Conteneur du kanban de la lane
-          // const laneWrapper = document.createElement("div");
-          // laneWrapper.className =
-          //   "lane overflow-x-auto text-xs w-full items-stretch flex  gap-2 kanban-scroll";
-          // panelInner.appendChild(laneWrapper);
-
-          // --- Rangée fantôme (même schéma que le kanban général) ---
-          // const ghostRow = document.createElement("div");
-          // ghostRow.className =
-          //   "ghostRow w-auto flex items-start gap-2 opacity-0 h-0 overflow-hidden pointer-events-none select-none";
-          // panelInner.appendChild(ghostRow);
-
           const ghostLeftSpacer = document.createElement("div");
           ghostLeftSpacer.className = "ghostLeftSpacer w-[17rem] shrink-0";
           panelInner.appendChild(ghostLeftSpacer);
 
-          // const ghostHeaderWrapper = document.createElement("div");
-          // ghostHeaderWrapper.className = "ghostHeaderWrapper  w-12 shrink-0";
-          // ghostRow.appendChild(ghostHeaderWrapper);
-
-          // // headers + colonne “+” invisibles, pour caler les largeurs
-          // createKanban(headers, ghostHeaderWrapper, filtered, sourceColId, {
-          //   showHeaders: true,
-          //   showAdd: true,
-          //   onlyHeaders: true,
-          // });
-
           // --- Le vrai kanban de la lane (sans headers, sans “+”) ---
           const laneKanban = document.createElement("div");
-          laneKanban.className = "laneKanban flex gap-2";
+          laneKanban.className = "laneKanban flex gap-2 text-xs";
           panelInner.appendChild(laneKanban);
 
           createKanban(
