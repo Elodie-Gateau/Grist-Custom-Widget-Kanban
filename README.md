@@ -1,9 +1,8 @@
 ![Last commit](https://img.shields.io/github/last-commit/elodie-gateau/Grist-Custom-Widget-Kanban?style=for-the-badge&color=blueviolet)
-![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Online-2ea44f?style=for-the-badge&logo=github)
-![JavaScript](https://img.shields.io/badge/Made%20with-JavaScript-f7df1e?style=for-the-badge&logo=javascript&logoColor=black)
-![TailwindCSS](https://img.shields.io/badge/Styled%20with-TailwindCSS-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)
-![Grist](https://img.shields.io/badge/Built%20for-Grist-15803d?style=for-the-badge&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA8AAAAPCAYAAAA71pVKAAAAVUlEQVQokWNgYGD4z0ABYBxVSF8BkQ0wDEQmoySLEB8vQvQdgUpoAxVMB0D8mwZQAKizkY2AAkRlA3L5gZGIAAjC3qAAEYQ2AwAJchAA7JbT0EAAAAASUVORK5CYII=)
-
+![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Online-brightgreen?style=for-the-badge&logo=github)
+![Made with JS](https://img.shields.io/badge/Made%20with-JavaScript-yellow?style=for-the-badge&logo=javascript)
+![TailwindCSS](https://img.shields.io/badge/Styled%20with-TailwindCSS-06B6D4?style=for-the-badge&logo=tailwindcss)
+![Grist](https://img.shields.io/badge/Built%20for-Grist-1a936f?style=for-the-badge)
 # Kanban – Custom Widget pour Grist
 
 > **Résumé** : Un widget Kanban léger pour **Grist** (No‑Code DB), déployé sur **GitHub Pages**.  
