@@ -1708,6 +1708,7 @@
 
         // Pas de regroupement -> comportement actuel (1 seul kanban)
         if (!laneColId) {
+          wrapper.className = "text-xs w-full items-stretch justify-between flex gap-2 flex-col sm:flex-row";
           rerenderKanban(selectedColumn, filtered, sourceColId);
           return;
         }
